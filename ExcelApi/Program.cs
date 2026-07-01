@@ -1,3 +1,5 @@
+using ExcelApi.Services;
+
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
@@ -14,28 +16,35 @@ if (app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 
-var summaries = new[]
-{
-    "Freezing", "Bracing", "Chilly", "Cool", "Mild", "Warm", "Balmy", "Hot", "Sweltering", "Scorching"
-};
+// Resolve the workbook path from configuration (defaults to the repo-root DemoData.xlsx,
+// one level above the project content root). The file never leaves this backend.
+string ResolveExcelPath() =>
+    Path.GetFullPath(Path.Combine(
+        app.Environment.ContentRootPath,
+        app.Configuration["ExcelFile"] ?? "../DemoData.xlsx"));
 
-app.MapGet("/weatherforecast", () =>
+// Approach A: parse on the backend with ClosedXML and return the shared WorkbookModel as JSON.
+app.MapGet("/api/workbook", () =>
     {
-        var forecast = Enumerable.Range(1, 5).Select(index =>
-                new WeatherForecast
-                (
-                    DateOnly.FromDateTime(DateTime.Now.AddDays(index)),
-                    Random.Shared.Next(-20, 55),
-                    summaries[Random.Shared.Next(summaries.Length)]
-                ))
-            .ToArray();
-        return forecast;
+        var path = ResolveExcelPath();
+        if (!File.Exists(path))
+            return Results.NotFound(new { error = $"Excel file not found at {path}" });
+        return Results.Ok(WorkbookReader.Read(path));
     })
-    .WithName("GetWeatherForecast");
+    .WithName("GetWorkbook");
+
+// Approaches B & C: serve the raw .xlsx bytes for client-side parsing (same-origin, never external).
+app.MapGet("/api/workbook/file", () =>
+    {
+        var path = ResolveExcelPath();
+        if (!File.Exists(path))
+            return Results.NotFound();
+        var bytes = File.ReadAllBytes(path);
+        return Results.File(
+            bytes,
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            Path.GetFileName(path));
+    })
+    .WithName("GetWorkbookFile");
 
 app.Run();
-
-record WeatherForecast(DateOnly Date, int TemperatureC, string? Summary)
-{
-    public int TemperatureF => 32 + (int)(TemperatureC / 0.5556);
-}

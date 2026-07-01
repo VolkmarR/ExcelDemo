@@ -1,0 +1,4 @@
+allowBuilds:
+  # protobufjs ships a build script only needed for its codegen CLI.
+  # Univer's client-side rendering (what this POC uses) does not need it.
+  protobufjs: false
