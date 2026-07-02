@@ -1,5 +1,5 @@
 import ExcelJS from 'exceljs'
-import type { Borders, Cell, CellStyle, Merge, Sheet } from '../model'
+import type { Borders, Cell, CellStyle, Merge, Picture, Sheet } from '../model'
 import type { LoadResult } from './backendModel'
 
 /**
@@ -14,13 +14,13 @@ export async function loadFromExcelJs(): Promise<LoadResult> {
   const buf = await res.arrayBuffer()
   const wb = new ExcelJS.Workbook()
   await wb.xlsx.load(buf)
-  const sheets = wb.worksheets.map(mapWorksheet)
+  const sheets = wb.worksheets.map((ws) => mapWorksheet(ws, wb))
   return { model: { sheets }, ms: performance.now() - t0 }
 }
 
-function mapWorksheet(ws: ExcelJS.Worksheet): Sheet {
-  const rowCount = ws.rowCount
-  const colCount = ws.columnCount
+function mapWorksheet(ws: ExcelJS.Worksheet, wb: ExcelJS.Workbook): Sheet {
+  let rowCount = ws.rowCount
+  let colCount = ws.columnCount
   const cells: Cell[] = []
 
   ws.eachRow({ includeEmpty: false }, (row, rn) => {
@@ -47,6 +47,20 @@ function mapWorksheet(ws: ExcelJS.Worksheet): Sheet {
     })
   })
 
+  const merges = parseMerges(ws)
+  const rawImages = ws.getImages()
+
+  // Extend the used range so overlays that reach past the last content cell
+  // (wide merges, floating pictures) have grid geometry to anchor against.
+  for (const m of merges) {
+    colCount = Math.max(colCount, m.c1 + 1)
+    rowCount = Math.max(rowCount, m.r1 + 1)
+  }
+  for (const img of rawImages) {
+    colCount = Math.max(colCount, Math.floor(img.range.br.nativeCol) + 1)
+    rowCount = Math.max(rowCount, Math.floor(img.range.br.nativeRow) + 1)
+  }
+
   const colWidths: number[] = []
   for (let c = 1; c <= colCount; c++) {
     const w = ws.getColumn(c).width
@@ -65,8 +79,9 @@ function mapWorksheet(ws: ExcelJS.Worksheet): Sheet {
     cells,
     colWidths,
     rowHeights,
-    merges: parseMerges(ws),
+    merges,
     freeze: parseFreeze(ws),
+    pictures: parsePictures(rawImages, wb, colWidths, rowHeights),
   }
 }
 
@@ -151,4 +166,71 @@ function parseFreeze(ws: ExcelJS.Worksheet): Sheet['freeze'] {
     /* ignore */
   }
   return null
+}
+
+// Floating pictures via ExcelJS's native API (no manual unzip). Each image's bytes
+// come from wb.getImage(); position/size are derived from the tl/br anchors against
+// the (already extended) column/row pixel sizes — mirrors the ClosedXML backend path.
+function parsePictures(
+  rawImages: ReturnType<ExcelJS.Worksheet['getImages']>,
+  wb: ExcelJS.Workbook,
+  colWidths: number[],
+  rowHeights: number[],
+): Picture[] {
+  const cum = (sizes: number[], upto: number, deflt: number) => {
+    let acc = 0
+    for (let i = 0; i < upto; i++) acc += sizes[i] ?? deflt
+    return acc
+  }
+  const out: Picture[] = []
+  for (const img of rawImages) {
+    try {
+      const media = wb.getImage(Number(img.imageId))
+      if (!media) continue
+      const b64 = media.base64 ?? uint8ToBase64(media.buffer)
+      if (!b64) continue
+      const ext = media.extension === 'jpg' ? 'jpeg' : (media.extension ?? 'png')
+      const src = b64.startsWith('data:') ? b64 : `data:image/${ext};base64,${b64}`
+      const { tl, br } = img.range
+      // ExcelJS reports anchor offsets in EMU (914400 per inch → 9525 per px at 96 DPI).
+      const px = (emu: number) => (emu || 0) / 9525
+      const fromCol = Math.floor(tl.nativeCol)
+      const fromRow = Math.floor(tl.nativeRow)
+      const offsetX = px(tl.nativeColOff)
+      const offsetY = px(tl.nativeRowOff)
+      const left = cum(colWidths, fromCol, 64) + offsetX
+      const top = cum(rowHeights, fromRow, 20) + offsetY
+      const right = cum(colWidths, Math.floor(br.nativeCol), 64) + px(br.nativeColOff)
+      const bottom = cum(rowHeights, Math.floor(br.nativeRow), 20) + px(br.nativeRowOff)
+      out.push({
+        src,
+        fromCol,
+        fromRow,
+        offsetX,
+        offsetY,
+        width: Math.max(1, Math.round(right - left)),
+        height: Math.max(1, Math.round(bottom - top)),
+      })
+    } catch {
+      /* a single unreadable image must not break the preview */
+    }
+  }
+  return out
+}
+
+// Browser-safe base64 for an image byte buffer (small POC images).
+function uint8ToBase64(buf?: unknown): string {
+  if (!buf) return ''
+  const bytes =
+    buf instanceof Uint8Array
+      ? buf
+      : ArrayBuffer.isView(buf)
+        ? new Uint8Array((buf as ArrayBufferView).buffer)
+        : buf instanceof ArrayBuffer
+          ? new Uint8Array(buf)
+          : null
+  if (!bytes || !bytes.length) return ''
+  let bin = ''
+  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i])
+  return btoa(bin)
 }

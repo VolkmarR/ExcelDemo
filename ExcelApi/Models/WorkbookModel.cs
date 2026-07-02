@@ -13,7 +13,8 @@ public record SheetModel(
     List<double> ColWidths,
     List<double> RowHeights,
     List<MergeModel> Merges,
-    FreezeModel? Freeze);
+    FreezeModel? Freeze,
+    List<PictureModel>? Pictures);
 
 // r/c are 0-based. Text is the display string (number format applied).
 // Raw carries the typed value (number/bool/string) so the grid can align numbers right.
@@ -26,6 +27,17 @@ public record CellModel(
     CellStyleModel? Style);
 
 public record MergeModel(int R0, int C0, int R1, int C1);
+
+// A floating picture anchored on the sheet. Src is a data URL (base64) so the
+// browser renders it directly; position/offset/size are in pixels at 96 DPI.
+public record PictureModel(
+    string Src,
+    int FromCol,
+    int FromRow,
+    double OffsetX,
+    double OffsetY,
+    double Width,
+    double Height);
 
 public record FreezeModel(int Rows, int Cols);
 

@@ -152,6 +152,14 @@
   z-index: 1;
 }
 
+/* Floating pictures rendered over the grid (Backend & ExcelJS tabs). */
+.cell-picture {
+  z-index: 5;
+  pointer-events: none;
+  user-select: none;
+  object-fit: fill;
+}
+
 /* Sheet tabs */
 .tabs {
   display: flex;

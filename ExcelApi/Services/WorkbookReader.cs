@@ -1,4 +1,5 @@
 using ClosedXML.Excel;
+using ClosedXML.Excel.Drawings;
 using ExcelApi.Models;
 
 namespace ExcelApi.Services;
@@ -52,14 +53,6 @@ public static class WorkbookReader
             }
         }
 
-        var colWidths = new List<double>(colCount);
-        for (int c = 1; c <= colCount; c++)
-            colWidths.Add(Math.Round(ws.Column(c).Width * 7 + 5)); // Excel char units -> px
-
-        var rowHeights = new List<double>(rowCount);
-        for (int r = 1; r <= rowCount; r++)
-            rowHeights.Add(Math.Round(ws.Row(r).Height * 4.0 / 3.0)); // points -> px
-
         var merges = new List<MergeModel>();
         foreach (var mr in ws.MergedRanges)
         {
@@ -68,10 +61,30 @@ public static class WorkbookReader
             merges.Add(new MergeModel(a.RowNumber - 1, a.ColumnNumber - 1, b.RowNumber - 1, b.ColumnNumber - 1));
         }
 
+        var pictures = ReadPictures(ws, out int picMaxCol, out int picMaxRow);
+
+        // Extend the used range so overlays that reach past the last content cell
+        // (wide merges, floating pictures) have grid geometry to anchor against.
+        foreach (var m in merges)
+        {
+            colCount = Math.Max(colCount, m.C1 + 1);
+            rowCount = Math.Max(rowCount, m.R1 + 1);
+        }
+        colCount = Math.Max(colCount, picMaxCol);
+        rowCount = Math.Max(rowCount, picMaxRow);
+
+        var colWidths = new List<double>(colCount);
+        for (int c = 1; c <= colCount; c++)
+            colWidths.Add(Math.Round(ws.Column(c).Width * 7 + 5)); // Excel char units -> px
+
+        var rowHeights = new List<double>(rowCount);
+        for (int r = 1; r <= rowCount; r++)
+            rowHeights.Add(Math.Round(ws.Row(r).Height * 4.0 / 3.0)); // points -> px
+
         // Freeze panes: read reliably by the ExcelJS path; best-effort null on the backend.
         FreezeModel? freeze = null;
 
-        return new SheetModel(ws.Name, rowCount, colCount, cells, colWidths, rowHeights, merges, freeze);
+        return new SheetModel(ws.Name, rowCount, colCount, cells, colWidths, rowHeights, merges, freeze, pictures);
     }
 
     private static object? RawValue(IXLCell cell) => cell.DataType switch
@@ -161,4 +174,58 @@ public static class WorkbookReader
             return null;
         }
     }
+
+    // Floating pictures via ClosedXML's native API (no separate parser). Emits each
+    // image as a base64 data URL plus its pixel anchor; also reports how far the
+    // pictures reach so the caller can grow the sheet's used range to fit them.
+    private static List<PictureModel> ReadPictures(IXLWorksheet ws, out int maxCol, out int maxRow)
+    {
+        maxCol = 0;
+        maxRow = 0;
+        var pictures = new List<PictureModel>();
+        foreach (var pic in ws.Pictures)
+        {
+            try
+            {
+                byte[] bytes = pic.ImageStream.ToArray();
+                string src = $"data:{MimeOf(pic.Format)};base64,{Convert.ToBase64String(bytes)}";
+                int fromCol = pic.TopLeftCell.Address.ColumnNumber - 1;
+                int fromRow = pic.TopLeftCell.Address.RowNumber - 1;
+                pictures.Add(new PictureModel(src, fromCol, fromRow, pic.Left, pic.Top, pic.Width, pic.Height));
+
+                // Grow the used range to fit the picture. BottomRightCell throws for
+                // non-resizing anchors, so walk widths/heights from the pixel extent instead.
+                maxCol = Math.Max(maxCol, FarIndex(fromCol, pic.Left + pic.Width, i => Math.Round(ws.Column(i + 1).Width * 7 + 5)));
+                maxRow = Math.Max(maxRow, FarIndex(fromRow, pic.Top + pic.Height, i => Math.Round(ws.Row(i + 1).Height * 4.0 / 3.0)));
+            }
+            catch
+            {
+                // A single unreadable picture must never break the preview.
+            }
+        }
+        return pictures;
+    }
+
+    // Cell count (from a 0-based start) needed to span `extentPx`, walking cell sizes.
+    private static int FarIndex(int start, double extentPx, Func<int, double> sizePx)
+    {
+        double acc = 0;
+        int i = start;
+        while (acc < extentPx && i < start + 1000)
+        {
+            acc += sizePx(i);
+            i++;
+        }
+        return i + 1;
+    }
+
+    private static string MimeOf(XLPictureFormat fmt) => fmt switch
+    {
+        XLPictureFormat.Jpeg => "image/jpeg",
+        XLPictureFormat.Png => "image/png",
+        XLPictureFormat.Gif => "image/gif",
+        XLPictureFormat.Bmp => "image/bmp",
+        XLPictureFormat.Tiff => "image/tiff",
+        _ => "application/octet-stream",
+    };
 }
