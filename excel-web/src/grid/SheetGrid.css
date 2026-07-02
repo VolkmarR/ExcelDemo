@@ -142,14 +142,32 @@
   overflow: hidden;
   text-overflow: clip;
   background: var(--cell-bg);
+  user-select: none; /* don't start a native text selection while drag-selecting cells */
 }
-.cell.focused {
-  box-shadow: inset 0 0 0 2px var(--focus);
+/* Range tint drawn as an overlay so it composites OVER table/CF/explicit cell fills (those are
+   inline backgrounds and would beat a plain background rule). The active cell gets no ::after,
+   so it stays un-tinted like Excel's current cell. */
+.cell.sel {
+  position: relative;
+}
+.cell.sel::after {
+  content: '';
+  position: absolute;
+  inset: 0;
   background: var(--sel-bg);
-  z-index: 1;
+  pointer-events: none;
 }
 .cell.merged {
   z-index: 1;
+}
+/* One crisp green rectangle per selected range. Above cells/merges (z 0/1), below the sticky
+   headers (z 3/4) and pictures (z 5). Non-interactive so it never blocks clicks. */
+.sel-outline {
+  position: absolute;
+  z-index: 2;
+  box-sizing: border-box;
+  box-shadow: inset 0 0 0 2px var(--focus);
+  pointer-events: none;
 }
 
 /* Table cells: cancel the sheet zebra so the table's own banding is exact
@@ -219,6 +237,18 @@
 }
 .tab:hover:not(.active) {
   background: rgba(0, 0, 0, 0.04);
+}
+
+/* Excel-style selection summary (Average / Count / Sum), pinned to the right of the tab bar. */
+.sel-stats {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 0 14px;
+  color: var(--head-text);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 /* The grid is fixed light mode (Excel theme + conditional-format colors are tuned for a
