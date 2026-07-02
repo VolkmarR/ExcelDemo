@@ -192,19 +192,5 @@
   background: rgba(0, 0, 0, 0.04);
 }
 
-@media (prefers-color-scheme: dark) {
-  .sheet {
-    --grid-line: #33353d;
-    --grid-line-strong: #4a4d57;
-    --head-bg: #23252c;
-    --head-bg-hl: #1f3a2b;
-    --head-text: #b8bcc6;
-    --focus: #4ec98a;
-    --sel-bg: rgba(78, 201, 138, 0.12);
-    --zebra: rgba(255, 255, 255, 0.03);
-    --cell-bg: #1a1b21;
-    color: #e6e7ea;
-  }
-  .name-box { color: #e6e7ea; }
-  .col-head.hl, .row-head.hl { color: #d7f5e5; }
-}
+/* The grid is fixed light mode (Excel theme + conditional-format colors are tuned for a
+   light background). System dark mode is intentionally ignored here. */
