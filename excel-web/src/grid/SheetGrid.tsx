@@ -3,6 +3,7 @@ import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import type { BorderSide, Cell, CellStyle, HAlign, Sheet, WorkbookModel } from '../model'
 import { cellAddress, columnLabel } from '../model'
+import { buildSheetStyling } from './sheetStyling'
 import './SheetGrid.css'
 
 const GUTTER_W = 54 // row-number column width (px)
@@ -69,6 +70,9 @@ export default function SheetGrid({ workbook }: Props) {
     for (const cell of sheet.cells) m.set(cell.r * colCount + cell.c, cell)
     return m
   }, [sheet, colCount])
+
+  // Table + conditional-format styling, resolved once per sheet (exact theme colors).
+  const styling = useMemo(() => buildSheetStyling(sheet, workbook.theme), [sheet, workbook.theme])
 
   // Column geometry.
   const { colWidths, colOffsets, bodyWidth } = useMemo(() => {
@@ -206,17 +210,19 @@ export default function SheetGrid({ workbook }: Props) {
                   const key = r * colCount + c
                   if (coveredInFlow.has(key)) return null // rendered as a merge overlay instead
                   const cell = cellMap.get(key)
+                  const { style: cellStyle, isTableHeader, inTable } = styling.decorate(r, c, cell)
                   const isNum = typeof cell?.raw === 'number'
-                  const align: HAlign = cell?.style?.hAlign ?? (isNum ? 'right' : 'left')
+                  const align: HAlign = cellStyle?.hAlign ?? (isNum ? 'right' : 'left')
                   const focused = key === focusAnchorKey
                   return (
                     <div
                       key={c}
-                      className={`cell${focused ? ' focused' : ''}`}
-                      style={{ width: colWidths[c], ...styleToCss(cell?.style, align) }}
+                      className={`cell${inTable ? ' in-table' : ''}${isTableHeader ? ' table-header' : ''}${focused ? ' focused' : ''}`}
+                      style={{ width: colWidths[c], ...styleToCss(cellStyle, align) }}
                       onMouseDown={() => selectCell(r, c)}
                     >
                       {cell?.text}
+                      {isTableHeader && <span className="filter-glyph">▾</span>}
                     </div>
                   )
                 })}
@@ -228,22 +234,24 @@ export default function SheetGrid({ workbook }: Props) {
           {mergeBlocks.map((m, i) => {
             const key = m.r0 * colCount + m.c0
             const cell = cellMap.get(key)
+            const { style: cellStyle, isTableHeader, inTable } = styling.decorate(m.r0, m.c0, cell)
             const left = GUTTER_W + (colOffsets[m.c0] ?? 0)
             const top = rowOffsets[m.r0]
             let width = 0
             for (let c = m.c0; c <= m.c1; c++) width += colWidths[c] ?? DEFAULT_COL_W
             const height = rowOffsets[m.r1 + 1] - rowOffsets[m.r0]
             const isNum = typeof cell?.raw === 'number'
-            const align: HAlign = cell?.style?.hAlign ?? (isNum ? 'right' : 'left')
+            const align: HAlign = cellStyle?.hAlign ?? (isNum ? 'right' : 'left')
             const focused = key === focusAnchorKey
             return (
               <div
                 key={`m${i}`}
-                className={`cell merged${focused ? ' focused' : ''}`}
-                style={{ position: 'absolute', left, top, width, height, ...styleToCss(cell?.style, align) }}
+                className={`cell merged${inTable ? ' in-table' : ''}${isTableHeader ? ' table-header' : ''}${focused ? ' focused' : ''}`}
+                style={{ position: 'absolute', left, top, width, height, ...styleToCss(cellStyle, align) }}
                 onMouseDown={() => selectCell(m.r0, m.c0)}
               >
                 {cell?.text}
+                {isTableHeader && <span className="filter-glyph">▾</span>}
               </div>
             )
           })}

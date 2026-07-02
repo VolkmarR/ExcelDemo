@@ -67,6 +67,63 @@ export interface Picture {
   height: number
 }
 
+/** A rectangular cell range, 0-based inclusive (same shape as Merge). */
+export interface Range {
+  r0: number
+  c0: number
+  r1: number
+  c1: number
+}
+
+/** An Excel Table (ListObject) region. Colors come from the workbook theme + the built-in style. */
+export interface TableModel {
+  name: string
+  range: Range
+  /** Built-in table-style name, e.g. "TableStyleMedium4" | "TableStyleLight9". */
+  styleName?: string | null
+  showHeaderRow: boolean
+  showTotalsRow: boolean
+  showRowStripes: boolean
+  showColumnStripes: boolean
+  showFirstColumn: boolean
+  showLastColumn: boolean
+}
+
+/** Where a color-scale stop is anchored. min/max/percentile are computed from the data. */
+export type ColorScaleStopKind = 'min' | 'max' | 'num' | 'percent' | 'percentile' | 'formula'
+
+export interface ColorScaleStop {
+  kind: ColorScaleStopKind
+  /** Literal value for kind 'num'/'percent'/'percentile'; ignored for 'min'/'max'. */
+  value?: number | null
+  /** Stop color as #RRGGBB. */
+  color: string
+}
+
+/** A 2- or 3-color color scale. The only conditional-format type implemented so far. */
+export interface ColorScaleFormat {
+  type: 'colorScale'
+  range: Range
+  stops: ColorScaleStop[]
+}
+
+/** Discriminated union so cellIs/dataBar/iconSet can be added later without reshaping. */
+export type ConditionalFormat = ColorScaleFormat
+
+/** Resolved workbook theme palette (hex). Needed to render exact table-style colors. */
+export interface ThemePalette {
+  accent1: string
+  accent2: string
+  accent3: string
+  accent4: string
+  accent5: string
+  accent6: string
+  dk1: string
+  lt1: string
+  dk2: string
+  lt2: string
+}
+
 export interface Sheet {
   name: string
   rowCount: number
@@ -79,10 +136,14 @@ export interface Sheet {
   merges: Merge[]
   freeze?: { rows: number; cols: number } | null
   pictures?: Picture[] | null
+  tables?: TableModel[] | null
+  conditionalFormats?: ConditionalFormat[] | null
 }
 
 export interface WorkbookModel {
   sheets: Sheet[]
+  /** Workbook theme palette; used to resolve exact table-style colors. */
+  theme?: ThemePalette | null
 }
 
 /** Column index -> spreadsheet column letters (0 -> "A", 26 -> "AA"). */
