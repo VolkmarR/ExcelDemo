@@ -247,6 +247,24 @@ export default function SheetGrid({ workbook }: Props) {
               </div>
             )
           })}
+
+          {/* Floating pictures (absolute, above the grid; positioned by pixel anchor). */}
+          {sheet.pictures?.map((p, i) => (
+            <img
+              key={`pic${i}`}
+              className="cell-picture"
+              src={p.src}
+              alt=""
+              draggable={false}
+              style={{
+                position: 'absolute',
+                left: GUTTER_W + (colOffsets[p.fromCol] ?? 0) + p.offsetX,
+                top: (rowOffsets[p.fromRow] ?? 0) + p.offsetY,
+                width: p.width,
+                height: p.height,
+              }}
+            />
+          ))}
         </div>
       </div>
 

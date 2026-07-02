@@ -53,6 +53,20 @@ export interface Merge {
   c1: number
 }
 
+export interface Picture {
+  /** Data URL (base64), e.g. "data:image/jpeg;base64,…". */
+  src: string
+  /** 0-based anchor cell (top-left). */
+  fromCol: number
+  fromRow: number
+  /** Pixel offset within the anchor cell. */
+  offsetX: number
+  offsetY: number
+  /** Display size in px. */
+  width: number
+  height: number
+}
+
 export interface Sheet {
   name: string
   rowCount: number
@@ -64,6 +78,7 @@ export interface Sheet {
   rowHeights: number[]
   merges: Merge[]
   freeze?: { rows: number; cols: number } | null
+  pictures?: Picture[] | null
 }
 
 export interface WorkbookModel {

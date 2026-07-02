@@ -14,8 +14,9 @@ same-origin and all parsing happens on the backend or in the browser.
 
 - `ExcelApi/` — ASP.NET Core (.NET 10) backend
 - `excel-web/` — React 19 + Vite 8 frontend
-- `DemoData.xlsx` — the sample workbook (1 sheet `Tabelle1`, 4001×4 with cached `A+B+C`
-  formulas, plus a small `Diagram` sheet that now carries an embedded pie chart)
+- `DemoData.xlsx` — the sample workbook: sheet `Tabelle1` (4001×4 with cached `A+B+C`
+  formulas, two merged-cell regions, and an embedded photo) plus a small `Diagram` sheet
+  that carries an embedded pie chart
 
 ---
 
@@ -89,6 +90,34 @@ The three tabs:
 
 ---
 
+## Pictures & merged cells
+
+`Tabelle1` includes two **merged-cell regions** (`F3:H3`, `F6:F8`) and an **embedded photo**
+(anchored over columns J–S). Both render on **all three tabs**:
+
+| Option | How pictures are read | How they're drawn |
+|--------|-----------------------|-------------------|
+| **Backend · ClosedXML** | `IXLWorksheet.Pictures` (native API — bytes, format, pixel anchor), emitted as a base64 data URL in the JSON model | `<img>` overlay in the shared grid |
+| **Frontend · ExcelJS** | `ws.getImages()` + `wb.getImage()` (native API — buffer + anchor), no manual unzip | the same `<img>` overlay |
+| **Univer SDK** | (same base64 model from the backend) | `fWorksheet.newOverGridImage()…insertImages()` via the OSS `@univerjs/preset-sheets-drawing` |
+
+Unlike charts, **pictures need no library workaround**: ClosedXML and ExcelJS both expose images
+through their normal read APIs, and Univer's image support is plain **Apache-2.0**
+(`@univerjs/preset-sheets-drawing`), not the commercial `@univerjs-pro` tier. The photo's embedded
+external hyperlink (a source-credit URL) is **ignored** — only the bytes already inside the file
+are rendered, so nothing leaves localhost.
+
+**Merged cells** were already supported by all three renderers; the fix was that the
+Backend/ExcelJS **used range is now grown to cover overlays** (merges or pictures) that extend past
+the last cell with content — otherwise a wide merge like `F3:H3` (reaching column H, past the
+data's last column F) was clipped, and the picture had no columns to anchor to.
+
+Dependencies added: **backend 0** (ClosedXML's picture API is built in), **Backend/ExcelJS rendering
+0** (a plain `<img>`), and **`@univerjs/preset-sheets-drawing`** (Apache-2.0, largely already present
+transitively) for the Univer tab.
+
+---
+
 ## Charts / diagrams
 
 The `Diagram` sheet carries an embedded **pie chart** — categories Italy / Germany /
@@ -108,7 +137,8 @@ which makes it a useful comparison in its own right:
 
 **The common thread:** across the open-source spreadsheet ecosystem, chart **reading** is the
 consistently missing piece. ClosedXML and ExcelJS both parse cells, styles and merges but not
-charts; the one engine with charts built in (Univer) puts them behind a paid license. Actually
+charts (they *do* handle images — see above); the one engine with charts built in (Univer) puts
+them behind a paid license. Actually
 *drawing* the chart would be easy — the data is cached in the file and a small MIT renderer such
 as [Recharts](https://recharts.org) would draw the pie in a few lines — but every path first
 requires **bypassing the parsing library or paying for it**, so it is intentionally out of scope
@@ -128,7 +158,12 @@ for this POC.
   demoed. Fixing the production build means splitting Univer via `manualChunks`, loading
   its UMD build, or pinning stable Vite 7 (esbuild optimizer).
 - **Univer + Vite 8.** Univer needs the `optimizeDeps` config and the 30 extra
-  `devDependencies` in `excel-web/` (all documented in `vite.config.ts`) to load in dev.
-  Options A and B need none of that.
+  `devDependencies` in `excel-web/` (all documented in `vite.config.ts`) to load in dev; the
+  drawing packages (`@univerjs/preset-sheets-drawing` and its plugins) join that same
+  `optimizeDeps.exclude` list for image support. Options A and B need none of that.
+- **Picture sizing on the ExcelJS tab is approximate.** ExcelJS exposes an image's cell anchors
+  rather than its stored pixel size, so the width is reconstructed from column widths and can
+  differ slightly from the Backend tab (which reads the exact size from ClosedXML); position and
+  height match.
 - **Licenses:** ClosedXML, ExcelJS, `@tanstack/react-virtual` are MIT; Univer is
   Apache-2.0. All permissive.

@@ -22,6 +22,12 @@ export default defineConfig({
     exclude: [
       '@univerjs/presets',
       '@univerjs/preset-sheets-core',
+      '@univerjs/preset-sheets-drawing',
+      '@univerjs/docs-drawing',
+      '@univerjs/drawing',
+      '@univerjs/drawing-ui',
+      '@univerjs/sheets-drawing',
+      '@univerjs/sheets-drawing-ui',
       '@univerjs/core',
       '@univerjs/design',
       '@univerjs/docs',
