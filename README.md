@@ -15,8 +15,9 @@ same-origin and all parsing happens on the backend or in the browser.
 - `ExcelApi/` — ASP.NET Core (.NET 10) backend
 - `excel-web/` — React 19 + Vite 8 frontend
 - `DemoData.xlsx` — the sample workbook: sheet `Tabelle1` (4001×4 with cached `A+B+C`
-  formulas, two merged-cell regions, and an embedded photo) plus a small `Diagram` sheet
-  that carries an embedded pie chart
+  formulas, formatted as an Excel **table** with a **color-scale** on column D, two
+  merged-cell regions, and an embedded photo) plus a small `Diagram` sheet (a second table
+  and an embedded pie chart)
 
 ---
 
@@ -118,6 +119,43 @@ transitively) for the Univer tab.
 
 ---
 
+## Tables & conditional formatting
+
+`DemoData.xlsx` formats its data as **Excel Tables** and adds a conditional-format **color scale**:
+
+- **`Tabelle1`** (sheet *Tabelle1*, `A1:D4001`) — style **`TableStyleMedium4`** (solid green
+  header, banded rows). Column **D** also carries a 2-color **color scale**: green `#63BE7B`
+  for the smallest values → pale yellow `#FFEF9C` for the largest.
+- **`Tabelle2`** (sheet *Diagram*, `A1:B4`) — style **`TableStyleLight9`** (teal header
+  underline, thin borders, banded rows).
+
+Both render on the **Backend · ClosedXML** and **Frontend · ExcelJS** tabs, with the **exact
+theme colors** Excel uses:
+
+| Option | How tables / color scale are read | How they're drawn |
+|--------|-----------------------------------|-------------------|
+| **Backend · ClosedXML** | `IXLWorksheet.Tables` (name, range, style name, header/stripe flags) + `IXLWorksheet.ConditionalFormats` (color-scale stop colors); the workbook palette from `wb.Theme` | shared grid (`SheetGrid.tsx`) |
+| **Frontend · ExcelJS** | `ws.tables` / `ws.getTables()` + `ws.conditionalFormattings` (native read APIs); the palette parsed from the theme XML ExcelJS already holds — no re-unzip | the same shared grid |
+| **Univer SDK** | — not rendered (see below) | — |
+
+Neither library resolves the *colors* of a table style — Excel derives those live from the
+built-in style plus the workbook theme. So both adapters extract only **structured metadata**,
+and a single shared helper (`excel-web/src/grid/sheetStyling.ts`) resolves the exact colors
+once: it maps the style name to a theme accent (e.g. `TableStyleMedium4` → accent 3 = `#196B24`;
+`TableStyleLight9` → accent 1 = `#156082`), applies Excel's HSL **theme-tint** transform for the
+banded rows, and computes the color scale by interpolating between the stop colors across the
+column's actual min/max. The two grid tabs therefore render **identically**. Precedence matches
+Excel: **conditional-format fill > explicit cell formatting > table style**.
+
+**Univer** is intentionally left minimal here: its real table and conditional-formatting
+features are in the commercial `@univerjs-pro/*` packages (the same license line that keeps
+charts out — see below), so its tab shows the data without table chrome or the color scale.
+
+Dependencies added: **0** on all paths — ClosedXML and ExcelJS expose tables/CF/theme through
+their normal read APIs, and the color resolution is a small dependency-free TypeScript module.
+
+---
+
 ## Charts / diagrams
 
 The `Diagram` sheet carries an embedded **pie chart** — categories Italy / Germany /
@@ -151,6 +189,12 @@ for this POC.
 - **Charts / diagrams are not rendered** on any tab. Chart *reading* is unsupported by ClosedXML
   and ExcelJS, and is a paid (`@univerjs-pro`) feature in Univer — see
   [Charts / diagrams](#charts--diagrams) for the per-option reasons.
+- **Tables & conditional formatting render on the Backend and ExcelJS tabs only.** Univer's
+  table/CF support is commercial (`@univerjs-pro`), so its tab shows the data without table
+  styling or the color scale — see
+  [Tables & conditional formatting](#tables--conditional-formatting). Only 2-color/3-color
+  **color scales** are implemented (the file's only CF type); data bars, icon sets and
+  cell-value rules are modelled as a discriminated union but not yet drawn.
 - **`pnpm build` (production) fails on the Univer chunk.** Vite 8 ships an experimental
   Rolldown/oxc bundler whose parser overflows (`WebAssembly.Memory.grow`) on Univer's
   ~10 MB bundle. The Backend and ExcelJS parts build fine; only the isolated lazy Univer

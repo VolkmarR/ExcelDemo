@@ -1,5 +1,17 @@
 import ExcelJS from 'exceljs'
-import type { Borders, Cell, CellStyle, Merge, Picture, Sheet } from '../model'
+import type {
+  Borders,
+  Cell,
+  CellStyle,
+  ColorScaleStop,
+  ConditionalFormat,
+  Merge,
+  Picture,
+  Range,
+  Sheet,
+  TableModel,
+  ThemePalette,
+} from '../model'
 import type { LoadResult } from './backendModel'
 
 /**
@@ -15,7 +27,7 @@ export async function loadFromExcelJs(): Promise<LoadResult> {
   const wb = new ExcelJS.Workbook()
   await wb.xlsx.load(buf)
   const sheets = wb.worksheets.map((ws) => mapWorksheet(ws, wb))
-  return { model: { sheets }, ms: performance.now() - t0 }
+  return { model: { sheets, theme: parseTheme(wb) }, ms: performance.now() - t0 }
 }
 
 function mapWorksheet(ws: ExcelJS.Worksheet, wb: ExcelJS.Workbook): Sheet {
@@ -82,6 +94,145 @@ function mapWorksheet(ws: ExcelJS.Worksheet, wb: ExcelJS.Workbook): Sheet {
     merges,
     freeze: parseFreeze(ws),
     pictures: parsePictures(rawImages, wb, colWidths, rowHeights),
+    tables: parseTables(ws),
+    conditionalFormats: parseConditionalFormats(ws),
+  }
+}
+
+// Parse an A1 range like "A1:D4001" (or a single cell "B2") into 0-based bounds.
+function parseA1Range(ref: string): Range | null {
+  const m = /^\$?([A-Za-z]+)\$?(\d+)(?::\$?([A-Za-z]+)\$?(\d+))?$/.exec(ref.trim())
+  if (!m) return null
+  const col = (s: string) => {
+    let n = 0
+    for (const ch of s.toUpperCase()) n = n * 26 + (ch.charCodeAt(0) - 64)
+    return n - 1
+  }
+  const c0 = col(m[1])
+  const r0 = parseInt(m[2], 10) - 1
+  const c1 = m[3] ? col(m[3]) : c0
+  const r1 = m[4] ? parseInt(m[4], 10) - 1 : r0
+  return { r0: Math.min(r0, r1), c0: Math.min(c0, c1), r1: Math.max(r0, r1), c1: Math.max(c0, c1) }
+}
+
+// Excel Tables via ExcelJS's parsed `ws.tables` map (each value wraps a raw table model
+// with tableRef/style/headerRow). Not in the public typings, so read defensively.
+function parseTables(ws: ExcelJS.Worksheet): TableModel[] {
+  const out: TableModel[] = []
+  try {
+    const tablesObj = (ws as unknown as { tables?: Record<string, unknown> }).tables
+    for (const entry of Object.values(tablesObj ?? {})) {
+      try {
+        const t = entry as { model?: Record<string, unknown>; name?: string; style?: Record<string, unknown> }
+        const model = (t.model ?? t) as Record<string, unknown>
+        const ref = (model.tableRef ?? model.ref ?? '') as string
+        const range = parseA1Range(ref)
+        if (!range) continue
+        const style = (model.style ?? t.style ?? {}) as Record<string, unknown>
+        out.push({
+          name: (model.name ?? t.name ?? 'Table') as string,
+          range,
+          styleName: (style.theme as string) ?? null,
+          // ExcelJS reports headerRow=false even when a header is shown (OOXML headerRowCount
+          // defaults to 1 when absent). Excel tables show a header by default, so assume true.
+          showHeaderRow: true,
+          showTotalsRow: !!model.totalsRow,
+          showRowStripes: !!style.showRowStripes,
+          showColumnStripes: !!style.showColumnStripes,
+          showFirstColumn: !!style.showFirstColumn,
+          showLastColumn: !!style.showLastColumn,
+        })
+      } catch {
+        /* skip a single unreadable table */
+      }
+    }
+  } catch {
+    /* best-effort */
+  }
+  return out
+}
+
+// Conditional formatting: ExcelJS parses it into `ws.conditionalFormattings`
+// (array of { ref, rules }) on load — merging the x14 extension variant. Only color
+// scales are mapped; the data min/max is computed later in the shared styling helper.
+function parseConditionalFormats(ws: ExcelJS.Worksheet): ConditionalFormat[] {
+  const out: ConditionalFormat[] = []
+  try {
+    const cfs = (ws as unknown as { conditionalFormattings?: Array<{ ref?: string; rules?: unknown[] }> }).conditionalFormattings
+    if (!Array.isArray(cfs)) return out
+    for (const cf of cfs) {
+      const refs = (cf.ref ?? '').split(/\s+/).filter(Boolean)
+      for (const raw of cf.rules ?? []) {
+        const rule = raw as { type?: string; cfvo?: Array<{ type?: string; value?: unknown }>; color?: Array<Partial<ExcelJS.Color>> }
+        if (rule.type !== 'colorScale') continue
+        const cfvo = rule.cfvo ?? []
+        const colors = rule.color ?? []
+        const stops: ColorScaleStop[] = cfvo.map((v, i) => ({
+          kind: mapCfvoKind(v?.type),
+          value: v?.value != null ? Number(v.value) : null,
+          color: colorHex(colors[i]) ?? '#FFFFFF',
+        }))
+        if (stops.length < 2) continue
+        for (const ref of refs) {
+          const range = parseA1Range(ref)
+          if (range) out.push({ type: 'colorScale', range, stops })
+        }
+      }
+    }
+  } catch {
+    /* best-effort */
+  }
+  return out
+}
+
+function mapCfvoKind(t: string | undefined): ColorScaleStop['kind'] {
+  switch (t) {
+    case 'min':
+    case 'max':
+    case 'num':
+    case 'percent':
+    case 'percentile':
+    case 'formula':
+      return t
+    default:
+      return 'num'
+  }
+}
+
+// Resolve the workbook theme palette from the theme XML ExcelJS already holds
+// (wb.model.themes.theme1) — no re-unzip. Falls back to undefined on any error.
+function parseTheme(wb: ExcelJS.Workbook): ThemePalette | undefined {
+  try {
+    const xml = (wb.model as unknown as { themes?: Record<string, string> }).themes?.theme1
+    if (!xml || typeof xml !== 'string') return undefined
+    const doc = new DOMParser().parseFromString(xml, 'application/xml')
+    const slot = (name: string, dflt: string): string => {
+      const el = doc.getElementsByTagName('a:' + name)[0]
+      if (!el) return dflt
+      const srgb = el.getElementsByTagName('a:srgbClr')[0]
+      if (srgb) return ('#' + (srgb.getAttribute('val') ?? '')).toUpperCase()
+      const sys = el.getElementsByTagName('a:sysClr')[0]
+      if (sys) {
+        const last = sys.getAttribute('lastClr')
+        if (last) return ('#' + last).toUpperCase()
+        return sys.getAttribute('val') === 'window' ? '#FFFFFF' : '#000000'
+      }
+      return dflt
+    }
+    return {
+      accent1: slot('accent1', '#4472C4'),
+      accent2: slot('accent2', '#ED7D31'),
+      accent3: slot('accent3', '#A5A5A5'),
+      accent4: slot('accent4', '#FFC000'),
+      accent5: slot('accent5', '#5B9BD5'),
+      accent6: slot('accent6', '#70AD47'),
+      dk1: slot('dk1', '#000000'),
+      lt1: slot('lt1', '#FFFFFF'),
+      dk2: slot('dk2', '#44546A'),
+      lt2: slot('lt2', '#E8E8E8'),
+    }
+  } catch {
+    return undefined
   }
 }
 
@@ -189,7 +340,7 @@ function parsePictures(
       if (!media) continue
       const b64 = media.base64 ?? uint8ToBase64(media.buffer)
       if (!b64) continue
-      const ext = media.extension === 'jpg' ? 'jpeg' : (media.extension ?? 'png')
+      const ext = (media.extension as string) === 'jpg' ? 'jpeg' : (media.extension ?? 'png')
       const src = b64.startsWith('data:') ? b64 : `data:image/${ext};base64,${b64}`
       const { tl, br } = img.range
       // ExcelJS reports anchor offsets in EMU (914400 per inch → 9525 per px at 96 DPI).

@@ -152,6 +152,35 @@
   z-index: 1;
 }
 
+/* Table cells: cancel the sheet zebra so the table's own banding is exact
+   (banded rows still win via their inline background). */
+.row.odd .cell.in-table {
+  background: var(--cell-bg);
+}
+/* Table header cells carry a small, non-interactive filter-dropdown glyph. */
+.cell.table-header {
+  position: relative;
+  padding-right: 18px;
+}
+.filter-glyph {
+  position: absolute;
+  right: 3px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 13px;
+  height: 13px;
+  font-size: 8px;
+  line-height: 1;
+  border-radius: 2px;
+  background: rgba(0, 0, 0, 0.12);
+  border: 1px solid rgba(0, 0, 0, 0.18);
+  color: inherit;
+  pointer-events: none;
+}
+
 /* Floating pictures rendered over the grid (Backend & ExcelJS tabs). */
 .cell-picture {
   z-index: 5;
