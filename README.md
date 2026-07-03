@@ -274,3 +274,71 @@ for this POC.
 - **Licenses:** ClosedXML, ExcelJS, `@tanstack/react-virtual`, react-data-grid, and Jspreadsheet CE
   (`jspreadsheet-ce`, `@jspreadsheet-ce/react`, `jsuites`, `@jspreadsheet/formula`) are MIT;
   Univer is Apache-2.0. All permissive.
+
+---
+
+## Commercial alternatives (evaluation)
+
+The five approaches above are all OSS. This section records an evaluation of whether a **commercial**
+library would deliver a *superior* preview at a reasonable price. It is a decision record, not an
+implemented approach.
+
+### Constraints
+
+- **Team of 11 developers — all 11 must be licensed** (assume company policy; not "license only the
+  1–2 devs who touch the code").
+- **Budget ≤ $5,000 total** for the whole team (annual).
+- Stack is a **.NET backend + React SPA** SaaS app.
+- The goal is **higher overall fidelity with less custom code** — a battle-tested engine that matches
+  Excel, not just closing one feature gap.
+- Must remain a **client-side interactive grid** with a **focused cell + full keyboard navigation**.
+  **Server-side PNG/PDF rendering is not acceptable.**
+
+The **only capability the OSS approaches lack is chart rendering** — tables, conditional-formatting
+color scales, merged cells, and pictures already render on four of the five tabs. So a commercial
+purchase essentially buys *charts* plus a more Excel-faithful engine that could retire custom code.
+
+### Vendors evaluated (2026 annual list prices)
+
+| Library | Licensing model | Cost for 11 devs | Client-side + keyboard nav | Renders xlsx charts | Fits constraints |
+|--------|-----------------|-----------------:|:--------------------------:|:-------------------:|:----------------:|
+| **Jspreadsheet Pro** (Ultimate) | **per app** (6–10 dev band) | **$4,499/yr** (11 is 1 over the band → Tailored quote) | ✅ | ✅ (verify on import) | ⚠️ **best fit — pending quote** |
+| **DHTMLX Spreadsheet** (Enterprise) | per project, ≤20 devs, perpetual | **$2,899** | ✅ | ❌ no charts (also no CF / floating images) | ❌ fails fidelity goal |
+| **SpreadJS** (MESCIUS) | per dev **+ deployment** | $999/dev **+ $12,499 SaaS deployment** | ✅ (charts add-on) | ✅ | ❌ over budget |
+| **Syncfusion React Spreadsheet** | per dev (~$948) | ~$10,400 | ✅ | ⚠️ charts dropped on import | ❌ over budget + feature |
+| **Telerik / Kendo UI** | per dev ($1,299 Complete) | ~$14,300 | ✅ (jQuery-wrapped) | ❌ charts need Windows+WPF | ❌ over budget + feature |
+| **DevExpress** | per dev ($1,200, −15% @11) | ~$11,200 | server render only | ✅ (Skia, server-side) | ❌ over budget + no client grid |
+| **Univer Pro** | quote-only | unknown | ✅ | ✅ (xlsx import also Pro-gated) | ❓ quote-only, server-dependent, known Vite 8 build failures |
+| **MESCIUS DsExcel / Syncfusion XlsIO / DevExpress Office File API** (.NET) | per dev | 1–2 backend seats ≈ $1–3k | server render to **PDF/PNG** | ✅ | ❌ violates "no PDF/PNG + keyboard nav" |
+
+> All prices are 2026 **list** and should be confirmed by quote. Syncfusion and Univer no longer
+> publish per-seat prices; regional EUR pricing (MESCIUS Europe, etc.) may differ.
+
+### How the constraints narrow the field
+
+- **"All 11 devs licensed"** eliminates every *per-seat* vendor — the cheapest (Syncfusion ~$948/dev)
+  is ~$10.4k for 11, roughly 2× the budget; SpreadJS, Telerik and DevExpress are worse.
+- **"No PDF/PNG, must have focused cell + keyboard nav"** eliminates the server-side render-to-image
+  path (MESCIUS DsExcel, Syncfusion XlsIO, DevExpress Office File API) — ironically the *only* path
+  cheap enough to fit, since it needs just 1–2 backend seats.
+- What survives all filters is a **client-side, per-app-licensed grid under $5k that renders charts**.
+  Only two candidates qualify, and they split on the feature that matters: **DHTMLX** fits the
+  budget/seat model cleanly but **cannot render charts** (a fidelity *downgrade*); **Jspreadsheet Pro**
+  has the charts/CF/floating-image fidelity but 11 devs is one over its Ultimate band.
+
+### Conclusion
+
+The only budget-compatible option that actually *raises* fidelity is **Jspreadsheet Pro**, upgrading
+the existing Jspreadsheet CE tab. Its native `.xlsx` import brings charts, a real conditional-format
+engine, native floating images and data validation — which would let us retire large parts of the
+hand-rolled code (`sheetStyling.ts`, the picture/merge overlays, the CE-specific JSON feeding) while
+keeping the client-side focused-cell + keyboard-nav UX. It hinges on **one email to Jspreadsheet
+sales** to confirm: (a) 11 developers covered at/under $5,000, and (b) that embedded charts render
+faithfully on import (test with `DemoData.xlsx`'s `Diagram`-sheet pie chart).
+
+**If that email fails on price or the 11th seat, the three constraints are mutually unsatisfiable** —
+no battle-tested, chart-rendering, client-side engine covers all 11 seats under $5k. The rational
+fallback is then **$0**: charts are the sole remaining gap, and the pie chart's data is already cached
+in `xl/charts/chart1.xml` (`<c:strCache>` / `<c:numCache>`), so a small OOXML chart-XML parse on the
+.NET side (`DocumentFormat.OpenXml`, already a transitive dependency) feeding an MIT renderer such as
+[Recharts](https://recharts.org) draws it with no new license and no architecture change.
