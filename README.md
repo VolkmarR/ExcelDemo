@@ -5,7 +5,7 @@ A proof-of-concept that renders a **high-fidelity, read-only preview** of an Exc
 keys or the mouse**, with a **focused cell** and a formula bar, just like Excel in
 read-only mode.
 
-The same workbook is rendered **three different ways** behind a tab switcher so the
+The same workbook is rendered **four different ways** behind a tab switcher so the
 approaches can be compared on fidelity, performance, and — the focus of this document —
 **how many dependencies each one adds and how big they are**.
 
@@ -31,6 +31,7 @@ below lists only what each **approach added on top of that**.
 | **A — Backend · ClosedXML** | `ClosedXML` (NuGet, MIT) | **1** | 7 | **~9.4 MB** of DLLs (server-side) | **0 B** — the browser only receives compact JSON |
 | **B — Frontend · ExcelJS** | `exceljs` (npm, MIT) | **1** | a few | 23 MB in `node_modules` (dev only) | **~0.93 MB** (`exceljs.min.js`, self-contained) |
 | **C — Univer SDK** | `@univerjs/presets` + `@univerjs/preset-sheets-core` (npm, Apache-2.0) | **2** (+ 30 leaf deps, see note) | **~100** `@univerjs/*` packages | **~177 MB** in `node_modules` | **~9.3 MB** of JS (the Univer engine) |
+| **D — react-data-grid (OSS grid)** | `react-data-grid` (npm, MIT) | **1** | **0** | **~0.42 MB** in `node_modules` (dev only) | **~96 KB** JS + ~10 KB CSS (self-contained ESM; ~22 KB gzipped) |
 | _shared by A & B_ | `@tanstack/react-virtual` (npm, MIT) | 1 | 0 | 64 KB | a few KB |
 
 ### Notes on the numbers
@@ -51,19 +52,28 @@ below lists only what each **approach added on top of that**.
   (Radix UI, `prop-types`, `opentype.js`, `sonner`, `react-transition-group`, `clsx`, …)
   were added as direct `devDependencies` purely to work around Vite 8's dependency
   optimizer (see the "Univer + Vite 8" note below). By far the heaviest option.
+- **Option D — react-data-grid:** one MIT package with **zero runtime dependencies** (it
+  ships its own virtualization; `clsx` is bundled in, not a separate install). It is fed by
+  the **same backend JSON as Option A** — it swaps only the *renderer*, replacing the
+  hand-rolled `SheetGrid` with an off-the-shelf grid, and reuses the same cell/table/CF
+  styling helper. At ~96 KB of self-contained JS it is the lightest client-side renderer
+  here (about ¼ of ExcelJS, ~1% of Univer) and needs no `optimizeDeps` workarounds.
 
 ### Rough comparison
 
 ```
-Browser payload:   A  ~0 (JSON only) │ B  ~0.93 MB │ C  ~9.3 MB
-Packages added:    A  1 (+7 trans.)  │ B  1        │ C  2 (+30 leaves, ~100 transitive)
-Install footprint: A  ~9 MB (DLLs)   │ B  ~23 MB   │ C  ~177 MB
+Browser payload:   A  ~0 (JSON only) │ B  ~0.93 MB │ C  ~9.3 MB │ D  ~0.1 MB
+Packages added:    A  1 (+7 trans.)  │ B  1        │ C  2 (+30 leaves, ~100 transitive) │ D  1 (0 trans.)
+Install footprint: A  ~9 MB (DLLs)   │ B  ~23 MB   │ C  ~177 MB │ D  ~0.42 MB
 ```
 
 **Takeaway:** A and B give the same custom grid (identical UX) at a tiny footprint —
 A keeps everything server-side and ships only JSON; B keeps everything in the browser for
 under 1 MB. C offers the richest, most "spreadsheet-like" engine out of the box but is
-one to two orders of magnitude heavier and needs extra build configuration.
+one to two orders of magnitude heavier and needs extra build configuration. D reuses A's
+backend JSON but swaps the hand-rolled grid for **react-data-grid**, a well-maintained OSS
+grid — the smallest client footprint of any option (~96 KB, zero transitive deps), trading
+a little fidelity (see [Known limitations](#known-limitations)) for far less custom code.
 
 ---
 
@@ -78,7 +88,7 @@ pnpm install
 pnpm dev                                  # → http://localhost:5173
 ```
 
-Open **http://localhost:5173** and switch between the three tabs. Vite proxies `/api` to
+Open **http://localhost:5173** and switch between the four tabs. Vite proxies `/api` to
 the backend, so no CORS setup is needed.
 
 The three tabs:
@@ -88,19 +98,21 @@ The three tabs:
 | **Backend · ClosedXML** | `.NET` server (`GET /api/workbook` → JSON) | shared custom virtualized grid (`src/grid/SheetGrid.tsx`) |
 | **Frontend · ExcelJS** | the browser (`GET /api/workbook/file` → ExcelJS) | the same shared grid |
 | **Univer SDK** | (same model) → Univer snapshot | Univer canvas engine, read-only |
+| **react-data-grid · OSS** | (same backend model as A) | `react-data-grid` (adazzle, MIT) — an off-the-shelf virtualized grid instead of `SheetGrid` |
 
 ---
 
 ## Pictures & merged cells
 
 `Tabelle1` includes two **merged-cell regions** (`F3:H3`, `F6:F8`) and an **embedded photo**
-(anchored over columns J–S). Both render on **all three tabs**:
+(anchored over columns J–S). Both render on **all four tabs**:
 
 | Option | How pictures are read | How they're drawn |
 |--------|-----------------------|-------------------|
 | **Backend · ClosedXML** | `IXLWorksheet.Pictures` (native API — bytes, format, pixel anchor), emitted as a base64 data URL in the JSON model | `<img>` overlay in the shared grid |
 | **Frontend · ExcelJS** | `ws.getImages()` + `wb.getImage()` (native API — buffer + anchor), no manual unzip | the same `<img>` overlay |
 | **Univer SDK** | (same base64 model from the backend) | `fWorksheet.newOverGridImage()…insertImages()` via the OSS `@univerjs/preset-sheets-drawing` |
+| **react-data-grid · OSS** | (same base64 model from the backend) | plain `<img>` overlay layered over the grid, offset by the grid's scroll position |
 
 Unlike charts, **pictures need no library workaround**: ClosedXML and ExcelJS both expose images
 through their normal read APIs, and Univer's image support is plain **Apache-2.0**
@@ -108,14 +120,18 @@ through their normal read APIs, and Univer's image support is plain **Apache-2.0
 external hyperlink (a source-credit URL) is **ignored** — only the bytes already inside the file
 are rendered, so nothing leaves localhost.
 
-**Merged cells** were already supported by all three renderers; the fix was that the
+**Merged cells** were already supported by the SheetGrid and Univer renderers; the fix was that the
 Backend/ExcelJS **used range is now grown to cover overlays** (merges or pictures) that extend past
 the last cell with content — otherwise a wide merge like `F3:H3` (reaching column H, past the
-data's last column F) was clipped, and the picture had no columns to anchor to.
+data's last column F) was clipped, and the picture had no columns to anchor to. On the
+**react-data-grid** tab, horizontal merges (`F3:H3`) use the grid's native `colSpan`; multi-row
+merges (`F6:F8`) — which react-data-grid can't span natively — are drawn as an **absolute overlay
+cell** (the same technique as the picture layer, with the covered cells blanked), so both
+orientations render correctly.
 
-Dependencies added: **backend 0** (ClosedXML's picture API is built in), **Backend/ExcelJS rendering
-0** (a plain `<img>`), and **`@univerjs/preset-sheets-drawing`** (Apache-2.0, largely already present
-transitively) for the Univer tab.
+Dependencies added: **backend 0** (ClosedXML's picture API is built in), **Backend/ExcelJS/react-data-grid
+rendering 0** (a plain `<img>`), and **`@univerjs/preset-sheets-drawing`** (Apache-2.0, largely already
+present transitively) for the Univer tab.
 
 ---
 
@@ -129,13 +145,14 @@ transitively) for the Univer tab.
 - **`Tabelle2`** (sheet *Diagram*, `A1:B4`) — style **`TableStyleLight9`** (teal header
   underline, thin borders, banded rows).
 
-Both render on the **Backend · ClosedXML** and **Frontend · ExcelJS** tabs, with the **exact
-theme colors** Excel uses:
+They render on the **Backend · ClosedXML**, **Frontend · ExcelJS**, and **react-data-grid**
+tabs, with the **exact theme colors** Excel uses:
 
 | Option | How tables / color scale are read | How they're drawn |
 |--------|-----------------------------------|-------------------|
 | **Backend · ClosedXML** | `IXLWorksheet.Tables` (name, range, style name, header/stripe flags) + `IXLWorksheet.ConditionalFormats` (color-scale stop colors); the workbook palette from `wb.Theme` | shared grid (`SheetGrid.tsx`) |
 | **Frontend · ExcelJS** | `ws.tables` / `ws.getTables()` + `ws.conditionalFormattings` (native read APIs); the palette parsed from the theme XML ExcelJS already holds — no re-unzip | the same shared grid |
+| **react-data-grid · OSS** | (same backend metadata as A) | react-data-grid, via the **same `sheetStyling.ts` helper** — table chrome + color scale reused verbatim |
 | **Univer SDK** | — not rendered (see below) | — |
 
 Neither library resolves the *colors* of a table style — Excel derives those live from the
@@ -144,7 +161,8 @@ and a single shared helper (`excel-web/src/grid/sheetStyling.ts`) resolves the e
 once: it maps the style name to a theme accent (e.g. `TableStyleMedium4` → accent 3 = `#196B24`;
 `TableStyleLight9` → accent 1 = `#156082`), applies Excel's HSL **theme-tint** transform for the
 banded rows, and computes the color scale by interpolating between the stop colors across the
-column's actual min/max. The two grid tabs therefore render **identically**. Precedence matches
+column's actual min/max. All three DOM grid tabs (Backend, ExcelJS, react-data-grid) therefore
+render **identically** — react-data-grid reuses the very same helper. Precedence matches
 Excel: **conditional-format fill > explicit cell formatting > table style**.
 
 **Univer** is intentionally left minimal here: its real table and conditional-formatting
@@ -152,7 +170,8 @@ features are in the commercial `@univerjs-pro/*` packages (the same license line
 charts out — see below), so its tab shows the data without table chrome or the color scale.
 
 Dependencies added: **0** on all paths — ClosedXML and ExcelJS expose tables/CF/theme through
-their normal read APIs, and the color resolution is a small dependency-free TypeScript module.
+their normal read APIs, the color resolution is a small dependency-free TypeScript module, and
+the react-data-grid tab reuses that exact module (`sheetStyling.ts` + `cellCss.ts`).
 
 ---
 
@@ -189,9 +208,9 @@ for this POC.
 - **Charts / diagrams are not rendered** on any tab. Chart *reading* is unsupported by ClosedXML
   and ExcelJS, and is a paid (`@univerjs-pro`) feature in Univer — see
   [Charts / diagrams](#charts--diagrams) for the per-option reasons.
-- **Tables & conditional formatting render on the Backend and ExcelJS tabs only.** Univer's
-  table/CF support is commercial (`@univerjs-pro`), so its tab shows the data without table
-  styling or the color scale — see
+- **Tables & conditional formatting render on the Backend, ExcelJS and react-data-grid tabs.**
+  Univer's table/CF support is commercial (`@univerjs-pro`), so its tab alone shows the data
+  without table styling or the color scale — see
   [Tables & conditional formatting](#tables--conditional-formatting). Only 2-color/3-color
   **color scales** are implemented (the file's only CF type); data bars, icon sets and
   cell-value rules are modelled as a discriminated union but not yet drawn.
@@ -209,5 +228,14 @@ for this POC.
   rather than its stored pixel size, so the width is reconstructed from column widths and can
   differ slightly from the Backend tab (which reads the exact size from ClosedXML); position and
   height match.
-- **Licenses:** ClosedXML, ExcelJS, `@tanstack/react-virtual` are MIT; Univer is
-  Apache-2.0. All permissive.
+- **react-data-grid tab — a couple of intentional gaps.** It is fed the same backend JSON as the
+  Backend tab and reuses the same styling, so values, table chrome, the color scale, headers,
+  gridlines, the formula bar, the picture, **both merge orientations** and **keyboard navigation**
+  all match SheetGrid (multi-row merges are drawn as an overlay, since react-data-grid's `colSpan`
+  is horizontal-only). Two things are *not* replicated: the **drag-select rectangle +
+  Average/Count/Sum status bar** (react-data-grid uses single active-cell selection + arrow-key nav
+  out of the box), and the **picture/merge overlays are positioned by scroll offset** (pixel-anchored
+  but layered over the grid, not inside its scroll content). These are the cost of an off-the-shelf
+  grid vs. the hand-rolled one.
+- **Licenses:** ClosedXML, ExcelJS, `@tanstack/react-virtual`, react-data-grid are MIT;
+  Univer is Apache-2.0. All permissive.
