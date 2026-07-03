@@ -5,7 +5,7 @@ A proof-of-concept that renders a **high-fidelity, read-only preview** of an Exc
 keys or the mouse**, with a **focused cell** and a formula bar, just like Excel in
 read-only mode.
 
-The same workbook is rendered **four different ways** behind a tab switcher so the
+The same workbook is rendered **five different ways** behind a tab switcher so the
 approaches can be compared on fidelity, performance, and — the focus of this document —
 **how many dependencies each one adds and how big they are**.
 
@@ -32,6 +32,7 @@ below lists only what each **approach added on top of that**.
 | **B — Frontend · ExcelJS** | `exceljs` (npm, MIT) | **1** | a few | 23 MB in `node_modules` (dev only) | **~0.93 MB** (`exceljs.min.js`, self-contained) |
 | **C — Univer SDK** | `@univerjs/presets` + `@univerjs/preset-sheets-core` (npm, Apache-2.0) | **2** (+ 30 leaf deps, see note) | **~100** `@univerjs/*` packages | **~177 MB** in `node_modules` | **~9.3 MB** of JS (the Univer engine) |
 | **D — react-data-grid (OSS grid)** | `react-data-grid` (npm, MIT) | **1** | **0** | **~0.42 MB** in `node_modules` (dev only) | **~96 KB** JS + ~10 KB CSS (self-contained ESM; ~22 KB gzipped) |
+| **E — Jspreadsheet CE (OSS grid)** | `@jspreadsheet-ce/react` + `jspreadsheet-ce` + `jsuites` (npm, MIT) | **3** | **1** (`@jspreadsheet/formula`) | **~1.2 MB** in `node_modules` (dev only) | **~165 KB** (CE) + **~455 KB** (jsuites) JS + ~90 KB CSS (≈130 KB JS gzipped) |
 | _shared by A & B_ | `@tanstack/react-virtual` (npm, MIT) | 1 | 0 | 64 KB | a few KB |
 
 ### Notes on the numbers
@@ -58,13 +59,22 @@ below lists only what each **approach added on top of that**.
   hand-rolled `SheetGrid` with an off-the-shelf grid, and reuses the same cell/table/CF
   styling helper. At ~96 KB of self-contained JS it is the lightest client-side renderer
   here (about ¼ of ExcelJS, ~1% of Univer) and needs no `optimizeDeps` workarounds.
+- **Option E — Jspreadsheet CE:** a full MIT spreadsheet component driven through its
+  official React wrapper (`@jspreadsheet-ce/react`). Fed the **same backend JSON as Option
+  A** — again swapping only the renderer. Unlike react-data-grid it is not self-contained:
+  its core is a UMD bundle that pulls in **`jsuites`** (~455 KB raw — dropdown/calendar/etc.
+  editors, most unused here but loaded whole because the UMD blob isn't tree-shaken) and
+  `@jspreadsheet/formula`. All three packages are MIT and need to be listed in Vite's
+  `optimizeDeps.include` so the UMD `require()`s resolve to ESM. In return you get native
+  A/B/C headers, row numbers, keyboard nav, and — notably — **native merged cells in both
+  orientations** (see below).
 
 ### Rough comparison
 
 ```
-Browser payload:   A  ~0 (JSON only) │ B  ~0.93 MB │ C  ~9.3 MB │ D  ~0.1 MB
-Packages added:    A  1 (+7 trans.)  │ B  1        │ C  2 (+30 leaves, ~100 transitive) │ D  1 (0 trans.)
-Install footprint: A  ~9 MB (DLLs)   │ B  ~23 MB   │ C  ~177 MB │ D  ~0.42 MB
+Browser payload:   A  ~0 (JSON only) │ B  ~0.93 MB │ C  ~9.3 MB │ D  ~0.1 MB │ E  ~0.6 MB (mostly jsuites)
+Packages added:    A  1 (+7 trans.)  │ B  1        │ C  2 (+30 leaves, ~100 transitive) │ D  1 (0 trans.) │ E  3 (+1 trans.)
+Install footprint: A  ~9 MB (DLLs)   │ B  ~23 MB   │ C  ~177 MB │ D  ~0.42 MB │ E  ~1.2 MB
 ```
 
 **Takeaway:** A and B give the same custom grid (identical UX) at a tiny footprint —
@@ -74,6 +84,10 @@ one to two orders of magnitude heavier and needs extra build configuration. D re
 backend JSON but swaps the hand-rolled grid for **react-data-grid**, a well-maintained OSS
 grid — the smallest client footprint of any option (~96 KB, zero transitive deps), trading
 a little fidelity (see [Known limitations](#known-limitations)) for far less custom code.
+E also reuses A's backend JSON but renders it with **Jspreadsheet CE**, a full OSS
+spreadsheet component: heavier than D (it drags in `jsuites`) but the most "spreadsheet
+out of the box" of the OSS grids — native headers, keyboard nav, and merged cells in both
+orientations, with the table/color-scale styling reused verbatim from the shared helper.
 
 ---
 
@@ -88,10 +102,10 @@ pnpm install
 pnpm dev                                  # → http://localhost:5173
 ```
 
-Open **http://localhost:5173** and switch between the four tabs. Vite proxies `/api` to
+Open **http://localhost:5173** and switch between the five tabs. Vite proxies `/api` to
 the backend, so no CORS setup is needed.
 
-The three tabs:
+The five tabs:
 
 | Tab | Parses | Renders with |
 |-----|--------|--------------|
@@ -99,13 +113,14 @@ The three tabs:
 | **Frontend · ExcelJS** | the browser (`GET /api/workbook/file` → ExcelJS) | the same shared grid |
 | **Univer SDK** | (same model) → Univer snapshot | Univer canvas engine, read-only |
 | **react-data-grid · OSS** | (same backend model as A) | `react-data-grid` (adazzle, MIT) — an off-the-shelf virtualized grid instead of `SheetGrid` |
+| **Jspreadsheet CE · OSS** | (same backend model as A) | `jspreadsheet-ce` via `@jspreadsheet-ce/react` (MIT) — a full OSS spreadsheet component |
 
 ---
 
 ## Pictures & merged cells
 
 `Tabelle1` includes two **merged-cell regions** (`F3:H3`, `F6:F8`) and an **embedded photo**
-(anchored over columns J–S). Both render on **all four tabs**:
+(anchored over columns J–S). Both render on **all five tabs**:
 
 | Option | How pictures are read | How they're drawn |
 |--------|-----------------------|-------------------|
@@ -113,6 +128,7 @@ The three tabs:
 | **Frontend · ExcelJS** | `ws.getImages()` + `wb.getImage()` (native API — buffer + anchor), no manual unzip | the same `<img>` overlay |
 | **Univer SDK** | (same base64 model from the backend) | `fWorksheet.newOverGridImage()…insertImages()` via the OSS `@univerjs/preset-sheets-drawing` |
 | **react-data-grid · OSS** | (same base64 model from the backend) | plain `<img>` overlay layered over the grid, offset by the grid's scroll position |
+| **Jspreadsheet CE · OSS** | (same base64 model from the backend) | plain `<img>` overlay over CE's scroll viewport (CE's *native* floating images are Pro-only), offset by CE's scroll position |
 
 Unlike charts, **pictures need no library workaround**: ClosedXML and ExcelJS both expose images
 through their normal read APIs, and Univer's image support is plain **Apache-2.0**
@@ -127,9 +143,11 @@ data's last column F) was clipped, and the picture had no columns to anchor to. 
 **react-data-grid** tab, horizontal merges (`F3:H3`) use the grid's native `colSpan`; multi-row
 merges (`F6:F8`) — which react-data-grid can't span natively — are drawn as an **absolute overlay
 cell** (the same technique as the picture layer, with the covered cells blanked), so both
-orientations render correctly.
+orientations render correctly. On the **Jspreadsheet CE** tab, merges are **native**: the model's
+merges map straight to CE's `mergeCells` option (`{ "F3": [3,1], "F6": [1,3] }`), so both `F3:H3`
+(horizontal) and `F6:F8` (vertical) render as real merged cells with no overlay needed.
 
-Dependencies added: **backend 0** (ClosedXML's picture API is built in), **Backend/ExcelJS/react-data-grid
+Dependencies added: **backend 0** (ClosedXML's picture API is built in), **Backend/ExcelJS/react-data-grid/Jspreadsheet-CE
 rendering 0** (a plain `<img>`), and **`@univerjs/preset-sheets-drawing`** (Apache-2.0, largely already
 present transitively) for the Univer tab.
 
@@ -145,14 +163,15 @@ present transitively) for the Univer tab.
 - **`Tabelle2`** (sheet *Diagram*, `A1:B4`) — style **`TableStyleLight9`** (teal header
   underline, thin borders, banded rows).
 
-They render on the **Backend · ClosedXML**, **Frontend · ExcelJS**, and **react-data-grid**
-tabs, with the **exact theme colors** Excel uses:
+They render on the **Backend · ClosedXML**, **Frontend · ExcelJS**, **react-data-grid**, and
+**Jspreadsheet CE** tabs, with the **exact theme colors** Excel uses:
 
 | Option | How tables / color scale are read | How they're drawn |
 |--------|-----------------------------------|-------------------|
 | **Backend · ClosedXML** | `IXLWorksheet.Tables` (name, range, style name, header/stripe flags) + `IXLWorksheet.ConditionalFormats` (color-scale stop colors); the workbook palette from `wb.Theme` | shared grid (`SheetGrid.tsx`) |
 | **Frontend · ExcelJS** | `ws.tables` / `ws.getTables()` + `ws.conditionalFormattings` (native read APIs); the palette parsed from the theme XML ExcelJS already holds — no re-unzip | the same shared grid |
 | **react-data-grid · OSS** | (same backend metadata as A) | react-data-grid, via the **same `sheetStyling.ts` helper** — table chrome + color scale reused verbatim |
+| **Jspreadsheet CE · OSS** | (same backend metadata as A) | CE's per-cell `style` option, fed by the **same `sheetStyling.ts` + `cellCss.ts` helpers** (as a CSS string) — CE has no CF engine of its own, but doesn't need one |
 | **Univer SDK** | — not rendered (see below) | — |
 
 Neither library resolves the *colors* of a table style — Excel derives those live from the
@@ -161,9 +180,11 @@ and a single shared helper (`excel-web/src/grid/sheetStyling.ts`) resolves the e
 once: it maps the style name to a theme accent (e.g. `TableStyleMedium4` → accent 3 = `#196B24`;
 `TableStyleLight9` → accent 1 = `#156082`), applies Excel's HSL **theme-tint** transform for the
 banded rows, and computes the color scale by interpolating between the stop colors across the
-column's actual min/max. All three DOM grid tabs (Backend, ExcelJS, react-data-grid) therefore
-render **identically** — react-data-grid reuses the very same helper. Precedence matches
-Excel: **conditional-format fill > explicit cell formatting > table style**.
+column's actual min/max. All four DOM grid tabs (Backend, ExcelJS, react-data-grid, Jspreadsheet CE)
+therefore render **identically** — react-data-grid and Jspreadsheet CE both reuse the very same
+helper (CE via `styleToCssText`, which emits the resolved `CellStyle` as a CSS string for CE's
+per-cell `style` option). Precedence matches Excel: **conditional-format fill > explicit cell
+formatting > table style**.
 
 **Univer** is intentionally left minimal here: its real table and conditional-formatting
 features are in the commercial `@univerjs-pro/*` packages (the same license line that keeps
@@ -208,7 +229,8 @@ for this POC.
 - **Charts / diagrams are not rendered** on any tab. Chart *reading* is unsupported by ClosedXML
   and ExcelJS, and is a paid (`@univerjs-pro`) feature in Univer — see
   [Charts / diagrams](#charts--diagrams) for the per-option reasons.
-- **Tables & conditional formatting render on the Backend, ExcelJS and react-data-grid tabs.**
+- **Tables & conditional formatting render on the Backend, ExcelJS, react-data-grid and
+  Jspreadsheet CE tabs.**
   Univer's table/CF support is commercial (`@univerjs-pro`), so its tab alone shows the data
   without table styling or the color scale — see
   [Tables & conditional formatting](#tables--conditional-formatting). Only 2-color/3-color
@@ -217,7 +239,7 @@ for this POC.
 - **`pnpm build` (production) fails on the Univer chunk.** Vite 8 ships an experimental
   Rolldown/oxc bundler whose parser overflows (`WebAssembly.Memory.grow`) on Univer's
   ~10 MB bundle. The Backend and ExcelJS parts build fine; only the isolated lazy Univer
-  chunk trips it. **`pnpm dev` runs all three tabs correctly** — that is how this POC is
+  chunk trips it. **`pnpm dev` runs all five tabs correctly** — that is how this POC is
   demoed. Fixing the production build means splitting Univer via `manualChunks`, loading
   its UMD build, or pinning stable Vite 7 (esbuild optimizer).
 - **Univer + Vite 8.** Univer needs the `optimizeDeps` config and the 30 extra
@@ -237,5 +259,18 @@ for this POC.
   out of the box), and the **picture/merge overlays are positioned by scroll offset** (pixel-anchored
   but layered over the grid, not inside its scroll content). These are the cost of an off-the-shelf
   grid vs. the hand-rolled one.
-- **Licenses:** ClosedXML, ExcelJS, `@tanstack/react-virtual`, react-data-grid are MIT;
+- **Jspreadsheet CE tab — a full spreadsheet, with a few caveats.** Fed the same backend JSON and
+  the same styling helper, so values, table chrome, the color scale, native A/B/C headers, row
+  numbers, keyboard nav, the formula bar, the picture, and **both merge orientations (native
+  `mergeCells`)** all match the Backend tab. Caveats: (1) the **floating picture is our own `<img>`
+  overlay** positioned by CE's scroll offset — CE's native floating images are Pro-only — so it can
+  lag a frame on very fast scroll; (2) table/CF colors are **static per-cell CSS** resolved
+  server-side (CE has no live CF engine — fine for a read-only preview); (3) CE is an editable grid
+  **forced read-only** (`editable: false`), which suppresses its editing/context-menu affordances;
+  (4) one worksheet is rendered at a time behind **our own tab strip** (remounted on switch) rather
+  than CE's native multi-sheet tabs, deliberately, so there is a single scroll container for the
+  overlay + formula bar to track; and (5) the core is a UMD bundle that loads **all of `jsuites`
+  (~455 KB)** even though only a fraction is used.
+- **Licenses:** ClosedXML, ExcelJS, `@tanstack/react-virtual`, react-data-grid, and Jspreadsheet CE
+  (`jspreadsheet-ce`, `@jspreadsheet-ce/react`, `jsuites`, `@jspreadsheet/formula`) are MIT;
   Univer is Apache-2.0. All permissive.

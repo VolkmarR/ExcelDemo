@@ -8,14 +8,17 @@ import { loadFromExcelJs } from './adapters/exceljsModel'
 const UniverView = lazy(() => import('./views/UniverView'))
 // react-data-grid is small, but lazy-load it too so it stays its own chunk.
 const ReactDataGridView = lazy(() => import('./views/ReactDataGridView'))
+// Jspreadsheet CE + jsuites — lazy so its chunk only loads on its own tab.
+const JspreadsheetView = lazy(() => import('./views/JspreadsheetView'))
 
-type Approach = 'backend' | 'exceljs' | 'univer' | 'rdg'
+type Approach = 'backend' | 'exceljs' | 'univer' | 'rdg' | 'jss'
 
 const TABS: { id: Approach; label: string; desc: string }[] = [
   { id: 'backend', label: 'Backend · ClosedXML', desc: 'Parsed on the .NET server (ClosedXML) → JSON model → custom virtualized grid.' },
   { id: 'exceljs', label: 'Frontend · ExcelJS', desc: 'Raw .xlsx bytes parsed in the browser (ExcelJS) → same custom grid. Nothing leaves the browser.' },
   { id: 'univer', label: 'Univer SDK', desc: 'Same model rendered by the Univer spreadsheet engine (canvas), read-only, client-side.' },
   { id: 'rdg', label: 'react-data-grid · OSS', desc: 'Same ClosedXML JSON model rendered by react-data-grid (adazzle, MIT) — an off-the-shelf virtualized grid instead of the custom SheetGrid.' },
+  { id: 'jss', label: 'Jspreadsheet CE · OSS', desc: 'Same ClosedXML JSON model rendered by Jspreadsheet CE (MIT) via its React wrapper — a full spreadsheet component with native merges, per-cell styling and keyboard nav.' },
 ]
 
 function stats(res: LoadResult): string {
@@ -32,7 +35,7 @@ function App() {
   const [error, setError] = useState<string | null>(null)
 
   // Univer renders the backend-parsed model, so both those tabs share it.
-  const needBackend = approach === 'backend' || approach === 'univer' || approach === 'rdg'
+  const needBackend = approach === 'backend' || approach === 'univer' || approach === 'rdg' || approach === 'jss'
   const active = needBackend ? backend : exceljs
 
   useEffect(() => {
@@ -103,6 +106,11 @@ function App() {
         {!loading && !error && active && approach === 'rdg' && (
           <Suspense fallback={<div className="msg">Loading grid…</div>}>
             <ReactDataGridView key="rdg" workbook={active.model} />
+          </Suspense>
+        )}
+        {!loading && !error && active && approach === 'jss' && (
+          <Suspense fallback={<div className="msg">Loading Jspreadsheet…</div>}>
+            <JspreadsheetView key="jss" workbook={active.model} />
           </Suspense>
         )}
       </main>

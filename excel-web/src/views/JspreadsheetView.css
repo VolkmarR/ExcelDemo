@@ -1,0 +1,34 @@
+/* Jspreadsheet CE tab. The library ships its own grid CSS (jspreadsheet.css); this only
+   sizes the scroll area to fill the viewport and hosts the floating-picture overlay. The
+   formula bar + bottom tab strip reuse the shared classes from SheetGrid.css. */
+
+.jss-view .jss-wrap {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+  background: var(--cell-bg);
+}
+
+/* Keep CE's container from forcing the page wider than the viewport. */
+.jss-view .jss-wrap .jss_container {
+  max-width: 100%;
+}
+
+/* Floating picture layer: clipped to the data area (offset below the sticky header via an
+   inline `top`), positioned by scroll offset over CE's viewport — the same approximate,
+   pixel-anchored approach used by the react-data-grid tab. */
+.jss-view .overlay-layer {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+.jss-view .overlay-layer img {
+  position: absolute;
+  object-fit: fill;
+  user-select: none;
+}

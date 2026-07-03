@@ -10,11 +10,14 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@jspreadsheet-ce/react": "^5.0.2",
     "@tanstack/react-virtual": "^3.14.4",
     "@univerjs/preset-sheets-core": "^0.25.1",
     "@univerjs/preset-sheets-drawing": "^0.25.1",
     "@univerjs/presets": "^0.25.1",
     "exceljs": "^4.4.0",
+    "jspreadsheet-ce": "^5.0.4",
+    "jsuites": "^5.13.5",
     "react": "^19.2.7",
     "react-data-grid": "7.0.0-beta.59",
     "react-dom": "^19.2.7"
