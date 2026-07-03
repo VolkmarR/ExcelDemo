@@ -8,6 +8,9 @@ importers:
 
   .:
     dependencies:
+      '@jspreadsheet-ce/react':
+        specifier: ^5.0.2
+        version: 5.0.2
       '@tanstack/react-virtual':
         specifier: ^3.14.4
         version: 3.14.4(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
@@ -23,6 +26,12 @@ importers:
       exceljs:
         specifier: ^4.4.0
         version: 4.4.0
+      jspreadsheet-ce:
+        specifier: ^5.0.4
+        version: 5.0.4
+      jsuites:
+        specifier: ^5.13.5
+        version: 5.13.5
       react:
         specifier: ^19.2.7
         version: 19.2.7
@@ -290,6 +299,12 @@ packages:
 
   '@js-sdsl/ordered-map@4.4.2':
     resolution: {integrity: sha512-iUKgm52T8HOE/makSxjqoWhe95ZJA1/G1sYsGev2JDKUSS14KAgg1LHb+Ba+IPow0xflbnSkOsZcO08C7w1gYw==}
+
+  '@jspreadsheet-ce/react@5.0.2':
+    resolution: {integrity: sha512-KKUXQ+NkuDAe0QQ1ob7ivjxcE9Eu3Vrn41l4s1ZdZhdZDr+yohzEBwdduBzeTfwR2+aUTAYAbE4gNceDFdy8QQ==}
+
+  '@jspreadsheet/formula@2.0.2':
+    resolution: {integrity: sha512-PDQYf9REQA53I7tVYkvkeyQxrd5jcjUeHgItYnRpjN2QiIQwawSqBDtGGEVQTSboTG+JwgGCuhvOpj7FxeKwew==}
 
   '@napi-rs/wasm-runtime@1.1.6':
     resolution: {integrity: sha512-ZLv/JdUfkvOy9eCnnBaGfiO+XimbjebAeO+MRQqD/B+FR1tnRN0tpKSJHRbE8sFfS6aqsXZ67TQjfwfsxULVbg==}
@@ -1767,6 +1782,12 @@ packages:
     engines: {node: '>=6'}
     hasBin: true
 
+  jspreadsheet-ce@5.0.4:
+    resolution: {integrity: sha512-ra1JI1n+tEGgRMzTzNkPZjG0HZz8W6bFGAiTiHl+eYarXdRmS5qDc/ua3l2ev7oZ6Og9kjfrXYHVLUWiVc308w==}
+
+  jsuites@5.13.5:
+    resolution: {integrity: sha512-cvkcpy/v5I3+IAcNPE4UP38PFCEfUQw9JI5NN61dlcXLwkD+2UTIOsRPvgMLeqI1eDWHL4AHfrbcE/+TFciUsw==}
+
   jszip@3.10.1:
     resolution: {integrity: sha512-xXDvecyTpGLrqFrvkrUSoxxfJI5AH7U8zxxtVclpsUtMCq4JQ290LY8AW5c7Ggnr/Y/oK+bQMbqK2qmtk3pN4g==}
 
@@ -2495,6 +2516,12 @@ snapshots:
       '@jridgewell/sourcemap-codec': 1.5.5
 
   '@js-sdsl/ordered-map@4.4.2': {}
+
+  '@jspreadsheet-ce/react@5.0.2':
+    dependencies:
+      jspreadsheet-ce: 5.0.4
+
+  '@jspreadsheet/formula@2.0.2': {}
 
   '@napi-rs/wasm-runtime@1.1.6(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.1)':
     dependencies:
@@ -4695,6 +4722,13 @@ snapshots:
   jsesc@3.1.0: {}
 
   json5@2.2.3: {}
+
+  jspreadsheet-ce@5.0.4:
+    dependencies:
+      '@jspreadsheet/formula': 2.0.2
+      jsuites: 5.13.5
+
+  jsuites@5.13.5: {}
 
   jszip@3.10.1:
     dependencies:

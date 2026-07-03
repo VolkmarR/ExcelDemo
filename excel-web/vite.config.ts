@@ -49,6 +49,12 @@ export default defineConfig({
     // packages expose proper ESM named/default exports. (.npmrc hoists them so these
     // names resolve from the project root.)
     include: [
+      // Jspreadsheet CE: its core dist is a UMD bundle that require()s jsuites and
+      // @jspreadsheet/formula, so pre-bundle the whole set for clean ESM interop.
+      '@jspreadsheet-ce/react',
+      'jspreadsheet-ce',
+      '@jspreadsheet/formula',
+      'jsuites',
       '@flatten-js/interval-tree',
       '@floating-ui/dom',
       '@floating-ui/utils',
