@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent } from 'react'
+import type { KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent } from 'react'
 import { useVirtualizer } from '@tanstack/react-virtual'
-import type { BorderSide, Cell, CellStyle, HAlign, Range as CellRange, Sheet, WorkbookModel } from '../model'
+import type { Cell, HAlign, Range as CellRange, Sheet, WorkbookModel } from '../model'
 import { cellAddress, columnLabel } from '../model'
 import { buildSheetStyling } from './sheetStyling'
+import { styleToCss } from './cellCss'
 import './SheetGrid.css'
 
 const GUTTER_W = 54 // row-number column width (px)
@@ -58,46 +59,6 @@ const extendTo = (s: Selection, extent: CellPos): Selection => {
 }
 
 const fmtNum = (n: number) => n.toLocaleString(undefined, { maximumFractionDigits: 2 })
-
-function borderToCss(side?: BorderSide | null): string | undefined {
-  if (!side) return undefined
-  const s = side.style.toLowerCase()
-  const width = s === 'thick' ? '3px' : s.startsWith('medium') || s === 'double' ? '2px' : '1px'
-  const kind = s === 'double' ? 'double' : s.includes('dash') || s === 'dotted' || s === 'hair' ? 'dashed' : 'solid'
-  return `${width} ${kind} ${side.color ?? 'var(--grid-line-strong)'}`
-}
-
-function styleToCss(style: CellStyle | null | undefined, align: HAlign): CSSProperties {
-  const css: CSSProperties = {
-    justifyContent: align === 'right' ? 'flex-end' : align === 'center' ? 'center' : 'flex-start',
-    textAlign: align,
-  }
-  if (!style) return css
-  if (style.bold) css.fontWeight = 700
-  if (style.italic) css.fontStyle = 'italic'
-  if (style.underline) css.textDecoration = 'underline'
-  if (style.color) css.color = style.color
-  if (style.bg) css.background = style.bg
-  if (style.fontFamily) css.fontFamily = style.fontFamily
-  if (style.fontSize) css.fontSize = `${style.fontSize}pt`
-  if (style.vAlign) css.alignItems = style.vAlign === 'top' ? 'flex-start' : style.vAlign === 'middle' ? 'center' : 'flex-end'
-  if (style.wrap) {
-    css.whiteSpace = 'normal'
-    css.wordBreak = 'break-word'
-  }
-  const b = style.border
-  if (b) {
-    const t = borderToCss(b.top)
-    const r = borderToCss(b.right)
-    const bo = borderToCss(b.bottom)
-    const l = borderToCss(b.left)
-    if (t) css.borderTop = t
-    if (r) css.borderRight = r
-    if (bo) css.borderBottom = bo
-    if (l) css.borderLeft = l
-  }
-  return css
-}
 
 export default function SheetGrid({ workbook }: Props) {
   const [sheetIndex, setSheetIndex] = useState(0)

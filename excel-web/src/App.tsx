@@ -6,13 +6,16 @@ import { loadFromExcelJs } from './adapters/exceljsModel'
 
 // Univer is large; load it as its own chunk so the other two tabs don't pay for it.
 const UniverView = lazy(() => import('./views/UniverView'))
+// react-data-grid is small, but lazy-load it too so it stays its own chunk.
+const ReactDataGridView = lazy(() => import('./views/ReactDataGridView'))
 
-type Approach = 'backend' | 'exceljs' | 'univer'
+type Approach = 'backend' | 'exceljs' | 'univer' | 'rdg'
 
 const TABS: { id: Approach; label: string; desc: string }[] = [
   { id: 'backend', label: 'Backend · ClosedXML', desc: 'Parsed on the .NET server (ClosedXML) → JSON model → custom virtualized grid.' },
   { id: 'exceljs', label: 'Frontend · ExcelJS', desc: 'Raw .xlsx bytes parsed in the browser (ExcelJS) → same custom grid. Nothing leaves the browser.' },
   { id: 'univer', label: 'Univer SDK', desc: 'Same model rendered by the Univer spreadsheet engine (canvas), read-only, client-side.' },
+  { id: 'rdg', label: 'react-data-grid · OSS', desc: 'Same ClosedXML JSON model rendered by react-data-grid (adazzle, MIT) — an off-the-shelf virtualized grid instead of the custom SheetGrid.' },
 ]
 
 function stats(res: LoadResult): string {
@@ -29,7 +32,7 @@ function App() {
   const [error, setError] = useState<string | null>(null)
 
   // Univer renders the backend-parsed model, so both those tabs share it.
-  const needBackend = approach === 'backend' || approach === 'univer'
+  const needBackend = approach === 'backend' || approach === 'univer' || approach === 'rdg'
   const active = needBackend ? backend : exceljs
 
   useEffect(() => {
@@ -95,6 +98,11 @@ function App() {
         {!loading && !error && active && approach === 'univer' && (
           <Suspense fallback={<div className="msg">Loading Univer…</div>}>
             <UniverView key="univer" workbook={active.model} />
+          </Suspense>
+        )}
+        {!loading && !error && active && approach === 'rdg' && (
+          <Suspense fallback={<div className="msg">Loading grid…</div>}>
+            <ReactDataGridView key="rdg" workbook={active.model} />
           </Suspense>
         )}
       </main>

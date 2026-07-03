@@ -1,0 +1,93 @@
+/* Approach D — react-data-grid tuned to match the Excel look of SheetGrid.
+   react-data-grid ships its own rules inside `@layer rdg`, so every un-layered rule
+   here wins regardless of specificity. The container reuses class `sheet` (see the
+   view) for the flex-column layout + colour vars + font from SheetGrid.css. */
+
+.rdg-scroll-wrap {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+}
+
+/* Grid root: fill the area, drop rdg's default 350px height + outer border, force light
+   mode (rdg colours use light-dark(); the app is light-only), and map rdg's theme vars
+   onto the shared Excel palette. */
+.rdg-excel {
+  block-size: 100%;
+  border: none;
+  --rdg-color: #1a1a1a;
+  --rdg-background-color: var(--cell-bg);
+  --rdg-header-background-color: var(--head-bg);
+  --rdg-border-color: var(--grid-line);
+  --rdg-selection-color: var(--focus);
+  --rdg-font-size: 13px;
+}
+
+/* Data cells: kill rdg's cell padding so the styled inner div (which carries the table /
+   conditional-format background from decorate()) fills the cell edge-to-edge. */
+.rdg-excel .xcell-host {
+  padding: 0;
+}
+.rdg-excel .xcell {
+  display: flex;
+  align-items: center;
+  block-size: 100%;
+  inline-size: 100%;
+  box-sizing: border-box;
+  padding: 0 5px;
+  overflow: hidden;
+  white-space: nowrap;
+  position: relative;
+}
+.rdg-excel .xcell-th {
+  padding-right: 18px; /* room for the table-header filter glyph */
+}
+
+/* Column-letter headers + row-number gutter, styled like Excel's grey headers. */
+.rdg-excel .rdg-col-head,
+.rdg-excel .rdg-gutter,
+.rdg-excel .rdg-gutter-corner {
+  padding: 0;
+  text-align: center;
+  color: var(--head-text);
+  font-weight: 500;
+}
+.rdg-excel .rdg-gutter,
+.rdg-excel .rdg-gutter-corner {
+  background: var(--head-bg);
+}
+
+/* Overlay layer for things react-data-grid can't place in its own flow — pictures and multi-row
+   (vertical / block) merges. A clipped layer over the data area (offset past the 24px header row
+   and the 54px frozen gutter); the view positions each item against the grid's scroll offset, so
+   they track scrolling, and the clip stops them bleeding onto the frozen headers. */
+.rdg-view .overlay-layer {
+  position: absolute;
+  top: 24px;
+  left: 54px;
+  right: 0;
+  bottom: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+.rdg-view .overlay-layer img {
+  position: absolute;
+  object-fit: fill;
+  user-select: none;
+}
+/* Multi-row merges react-data-grid can't do natively (colSpan is horizontal-only): an opaque
+   overlay cell that covers the merged block's internal gridlines and reuses the anchor cell's
+   decorate() styling. Draws its own right/bottom gridline like SheetGrid's merge overlays. */
+.rdg-view .overlay-layer .merge-cell {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  box-sizing: border-box;
+  padding: 0 5px;
+  overflow: hidden;
+  white-space: nowrap;
+  background: var(--cell-bg);
+  border-right: 1px solid var(--grid-line);
+  border-bottom: 1px solid var(--grid-line);
+}
