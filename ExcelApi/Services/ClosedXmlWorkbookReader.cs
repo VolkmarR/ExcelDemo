@@ -9,9 +9,9 @@ namespace ExcelApi.Services;
 /// values (number-format applied), cached formula results, styles, merges and dimensions.
 /// Read-only — the file is never modified.
 /// </summary>
-public static class WorkbookReader
+public sealed class ClosedXmlWorkbookReader : IWorkbookReader
 {
-    public static WorkbookModel Read(string path)
+    public WorkbookModel Read(string path)
     {
         // FileShare.ReadWrite so a copy open in Excel does not block the preview.
         using var fs = File.Open(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);

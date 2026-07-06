@@ -7,6 +7,11 @@ var builder = WebApplication.CreateBuilder(args);
 // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
 builder.Services.AddOpenApi();
 
+// The active backend workbook parser. Both implementations produce the same WorkbookModel, so
+// swapping this single line switches /api/workbook between ClosedXML and the low-level Open XML SDK.
+builder.Services.AddSingleton<IWorkbookReader, ClosedXmlWorkbookReader>();
+// builder.Services.AddSingleton<IWorkbookReader, OpenXmlWorkbookReader>();
+
 var app = builder.Build();
 
 // Configure the HTTP request pipeline.
@@ -32,18 +37,19 @@ string ResolveExcelPath() =>
         app.Environment.ContentRootPath,
         app.Configuration["ExcelFile"] ?? "../DemoData.xlsx"));
 
-// Approach A: parse on the backend with ClosedXML and return the shared WorkbookModel as JSON.
-app.MapGet("/api/workbook", () =>
+// Approach A: parse on the backend with the configured IWorkbookReader and return the shared
+// WorkbookModel as JSON (ClosedXML or the Open XML SDK — see the DI registration above).
+app.MapGet("/api/workbook", (IWorkbookReader reader) =>
     {
         var path = ResolveExcelPath();
         if (!File.Exists(path))
             return Results.NotFound(new { error = $"Excel file not found at {path}" });
-        return Results.Ok(WorkbookReader.Read(path));
+        return Results.Ok(reader.Read(path));
     })
     .WithName("GetWorkbook")
     .WithTags("Workbook")
     .WithSummary("Parsed workbook as JSON")
-    .WithDescription("Parses DemoData.xlsx on the server with ClosedXML and returns the shared WorkbookModel (sheets, cells, styles, merges, pictures).")
+    .WithDescription("Parses DemoData.xlsx on the server with the configured IWorkbookReader and returns the shared WorkbookModel (sheets, cells, styles, merges, pictures).")
     .Produces<WorkbookModel>(StatusCodes.Status200OK)
     .Produces(StatusCodes.Status404NotFound);
 
