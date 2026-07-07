@@ -107,8 +107,12 @@ public sealed class ClosedXmlWorkbookReader : IWorkbookReader
         for (int r = 1; r <= rowCount; r++)
             rowHeights.Add(Math.Round(ws.Row(r).Height * 4.0 / 3.0)); // points -> px
 
-        // Freeze panes: read reliably by the ExcelJS path; best-effort null on the backend.
-        FreezeModel? freeze = null;
+        // Freeze panes: ClosedXML exposes the frozen row/column counts on the sheet view.
+        // When panes are frozen these are > 0 (a plain split leaves them 0 for this file).
+        var sv = ws.SheetView;
+        FreezeModel? freeze = (sv.SplitRow > 0 || sv.SplitColumn > 0)
+            ? new FreezeModel(sv.SplitRow, sv.SplitColumn)
+            : null;
 
         var tables = ReadTables(ws);
         var conditionalFormats = ReadConditionalFormats(ws);

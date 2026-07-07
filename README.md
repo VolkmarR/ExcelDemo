@@ -16,8 +16,9 @@ same-origin and all parsing happens on the backend or in the browser.
 - `excel-web/` — React 19 + Vite 8 frontend
 - `DemoData.xlsx` — the sample workbook: sheet `Tabelle1` (4001×4 with cached `A+B+C`
   formulas, formatted as an Excel **table** with a **color-scale** on column D, two
-  merged-cell regions, and an embedded photo) plus a small `Diagram` sheet (a second table
-  and an embedded pie chart)
+  merged-cell regions, an embedded photo, and a **frozen top row**), a small `Diagram` sheet
+  (a second table, an embedded pie chart, and a frozen top row), and a `fixed` sheet
+  (4001×4 with **3 frozen rows + 1 frozen column** to exercise freezing in both directions)
 
 ---
 
@@ -153,6 +154,42 @@ present transitively) for the Univer tab.
 
 ---
 
+## Frozen panes (fixed rows & columns)
+
+Excel **frozen panes** keep the first N rows and/or M columns visible while the rest of the
+sheet scrolls. `DemoData.xlsx` uses them on every sheet: `Tabelle1` and `Diagram` freeze the
+top row, and the `fixed` sheet freezes **3 rows + 1 column** so both directions are exercised.
+
+The freeze counts live on the shared model as `sheet.freeze = { rows, cols }` (`FreezeModel`
+on the .NET side), and every tab renders them:
+
+| Option | How the freeze is read | How it's rendered |
+|--------|------------------------|-------------------|
+| **Backend · ClosedXML** | `ws.SheetView.SplitRow` / `SplitColumn` (native) | shared grid (`SheetGrid.tsx`) |
+| **Frontend · ExcelJS** | `ws.views` frozen view (`xSplit`/`ySplit`, native) | the same shared grid |
+| **Univer SDK** | (same backend model) | native — the model's `freeze` maps straight to Univer's `freeze` snapshot |
+| **react-data-grid · OSS** | (same backend model) | native frozen columns (`frozen: true`) + a pinned overlay band for the rows |
+| **Jspreadsheet CE · OSS** | (same backend model) | native `freezeColumns` + a pinned overlay band for the rows |
+
+Both backend readers now populate `freeze` (previously stubbed to `null`): **ClosedXML** exposes
+the frozen counts directly on `IXLWorksheet.SheetView`, and the **OpenXML** alternative reads the
+sheet view's `<pane>` element (`VerticalSplit` = rows, `HorizontalSplit` = cols, guarded on
+`state="frozen"`). The two readers stay byte-interchangeable.
+
+On the two SheetGrid tabs the frozen **columns** are pinned with CSS `position: sticky` (columns
+aren't virtualized, so every column already renders in every row). The frozen **rows** can't use
+that trick — the row virtualizer unmounts off-screen rows — so they're drawn as an always-mounted
+**sticky band** layered just below the column header, reusing the same absolute-overlay idiom as
+merges and pictures. **Univer** freezes natively (the adapter already mapped `freeze`). The two
+OSS-grid tabs use each library's native frozen-**column** support (react-data-grid's `frozen`
+column flag, Jspreadsheet CE's `freezeColumns`) and, since neither has a frozen-top-*data*-row
+option, draw the frozen **rows** as a pinned band in their existing scroll-synced overlay layer.
+
+Dependencies added: **0** on every path — freeze is read through the libraries' normal APIs and
+rendered with CSS/overlays already present.
+
+---
+
 ## Tables & conditional formatting
 
 `DemoData.xlsx` formats its data as **Excel Tables** and adds a conditional-format **color scale**:
@@ -246,6 +283,14 @@ for this POC.
   `devDependencies` in `excel-web/` (all documented in `vite.config.ts`) to load in dev; the
   drawing packages (`@univerjs/preset-sheets-drawing` and its plugins) join that same
   `optimizeDeps.exclude` list for image support. Options A and B need none of that.
+- **Frozen panes render on all five tabs**, but a few overlaps are intentionally not clipped to
+  quadrants. On the SheetGrid tabs a merge, the selection outline, or a picture that *straddles*
+  the freeze line scrolls with the body rather than being split at the boundary (none occur in
+  `DemoData.xlsx`); Excel-perfect handling would need up to four clipped rectangles — out of scope
+  for a read-only preview. On the react-data-grid and Jspreadsheet CE tabs the frozen **rows** are
+  a pinned overlay band (those libraries have no frozen-top-*data*-row option), so like their
+  picture/merge overlays they're layered over the grid and positioned by scroll offset rather than
+  living inside the grid's own frozen region.
 - **Picture sizing on the ExcelJS tab is approximate.** ExcelJS exposes an image's cell anchors
   rather than its stored pixel size, so the width is reconstructed from column widths and can
   differ slightly from the Backend tab (which reads the exact size from ClosedXML); position and

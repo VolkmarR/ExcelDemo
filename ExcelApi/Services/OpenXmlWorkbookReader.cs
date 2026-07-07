@@ -17,7 +17,7 @@ namespace ExcelApi.Services;
 ///
 /// The output is intended to be byte-for-byte interchangeable with the ClosedXML reader, so it
 /// deliberately reproduces that reader's choices rather than "improving" on them: theme colors
-/// are omitted at the cell level (only rgb/indexed resolve), freeze panes are null, color-scale
+/// are omitted at the cell level (only rgb/indexed resolve), color-scale
 /// stop kinds are assigned positionally (min/max/percentile), solid fills read the OOXML
 /// <c>fgColor</c>, and a bad cell/table/picture/rule is swallowed so it can't break the preview.
 ///
@@ -150,8 +150,13 @@ public sealed class OpenXmlWorkbookReader : IWorkbookReader
         var rowHeights = new List<double>(rowCount);
         for (int r = 0; r < rowCount; r++) rowHeights.Add(RowHeightPx(r));
 
-        // Freeze panes: read reliably by the ExcelJS path; best-effort null on the backend.
-        FreezeModel? freeze = null;
+        // Freeze panes: read the sheet view's <pane>. OOXML HorizontalSplit = xSplit = cols,
+        // VerticalSplit = ySplit = rows; only a frozen (not a plain split) pane is a freeze.
+        var pane = ws.GetFirstChild<SheetViews>()?.GetFirstChild<SheetView>()?.GetFirstChild<Pane>();
+        FreezeModel? freeze = pane is not null
+            && (pane.State?.Value == PaneStateValues.Frozen || pane.State?.Value == PaneStateValues.FrozenSplit)
+            ? new FreezeModel((int)(pane.VerticalSplit?.Value ?? 0), (int)(pane.HorizontalSplit?.Value ?? 0))
+            : null;
 
         var tables = ReadTables(wsPart);
         var conditionalFormats = ReadConditionalFormats(ws);

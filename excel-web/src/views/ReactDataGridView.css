@@ -91,3 +91,21 @@
   border-right: 1px solid var(--grid-line);
   border-bottom: 1px solid var(--grid-line);
 }
+/* Frozen top-row band: opaque cells pinned below the header, reusing the anchor's decorate()
+   styling. z-index keeps the band above the merge/picture overlays it shares the layer with. */
+.rdg-view .overlay-layer .frozen-cell {
+  position: absolute;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  box-sizing: border-box;
+  padding: 0 5px;
+  overflow: hidden;
+  white-space: nowrap;
+  background: var(--cell-bg);
+  border-right: 1px solid var(--grid-line);
+  border-bottom: 1px solid var(--grid-line);
+}
+.rdg-view .overlay-layer .frozen-cell.xcell-th {
+  padding-right: 18px; /* room for the table-header filter glyph (anchored to this absolute cell) */
+}

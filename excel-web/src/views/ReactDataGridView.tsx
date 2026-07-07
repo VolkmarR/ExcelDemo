@@ -37,6 +37,11 @@ export default function ReactDataGridView({ workbook }: Props) {
   const sheet: Sheet = workbook.sheets[sheetIndex] ?? workbook.sheets[0]
   const { rowCount, colCount } = sheet
 
+  // Frozen panes: columns use react-data-grid's native `frozen` prop; rows have no native
+  // frozen-data-row option, so they're drawn as a pinned band in the existing overlay layer.
+  const frozenRows = Math.min(sheet.freeze?.rows ?? 0, rowCount)
+  const frozenCols = Math.min(sheet.freeze?.cols ?? 0, colCount)
+
   const [active, setActive] = useState({ r: 0, c: 0 })
   const [scroll, setScroll] = useState({ left: 0, top: 0 })
 
@@ -100,6 +105,7 @@ export default function ReactDataGridView({ workbook }: Props) {
         key: String(c),
         name: columnLabel(c),
         width: sheet.colWidths[c] ?? DEFAULT_COL_W,
+        frozen: c < frozenCols, // native pinned column
         headerCellClass: 'rdg-col-head',
         cellClass: 'xcell-host',
         colSpan: spans
@@ -122,7 +128,7 @@ export default function ReactDataGridView({ workbook }: Props) {
       })
     }
     return cols
-  }, [sheet, colCount, cellMap, styling, spansByCol, overlaidCells])
+  }, [sheet, colCount, cellMap, styling, spansByCol, overlaidCells, frozenCols])
 
   const rows = useMemo<GridRow[]>(() => Array.from({ length: rowCount }, (_, r) => ({ __r: r })), [rowCount])
 
@@ -162,7 +168,7 @@ export default function ReactDataGridView({ workbook }: Props) {
           onCellCopy={onCellCopy}
           onScroll={(e) => setScroll({ left: e.currentTarget.scrollLeft, top: e.currentTarget.scrollTop })}
         />
-        {(blockMerges.length > 0 || (sheet.pictures?.length ?? 0) > 0) && (
+        {(blockMerges.length > 0 || (sheet.pictures?.length ?? 0) > 0 || frozenRows > 0) && (
           <div className="overlay-layer">
             {blockMerges.map((m, i) => {
               const anchor = cellMap.get(m.r0 * colCount + m.c0)
@@ -201,6 +207,34 @@ export default function ReactDataGridView({ workbook }: Props) {
                 }}
               />
             ))}
+            {/* Frozen top rows: react-data-grid pins columns natively but has no frozen-data-row
+                option, so draw the first `frozenRows` rows as a band pinned vertically (no scroll.top)
+                that still scrolls horizontally (minus scroll.left, except the frozen-column corner). */}
+            {frozenRows > 0 &&
+              Array.from({ length: frozenRows }).flatMap((_, r) =>
+                Array.from({ length: colCount }, (_, c) => {
+                  if (overlaidCells.has(r * colCount + c)) return null
+                  const cell = cellMap.get(r * colCount + c)
+                  const { style, isTableHeader } = styling.decorate(r, c, cell)
+                  const align: HAlign = style?.hAlign ?? (typeof cell?.raw === 'number' ? 'right' : 'left')
+                  return (
+                    <div
+                      key={`fz${r}-${c}`}
+                      className={isTableHeader ? 'frozen-cell xcell-th' : 'frozen-cell'}
+                      style={{
+                        left: (colOffsets[c] ?? 0) - (c < frozenCols ? 0 : scroll.left),
+                        top: rowOffsets[r] ?? 0,
+                        width: sheet.colWidths[c] ?? DEFAULT_COL_W,
+                        height: ROW_H,
+                        ...styleToCss(style, align),
+                      }}
+                    >
+                      {cell?.text}
+                      {isTableHeader && <span className="filter-glyph">▾</span>}
+                    </div>
+                  )
+                }),
+              )}
           </div>
         )}
       </div>

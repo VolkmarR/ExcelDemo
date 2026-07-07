@@ -106,6 +106,14 @@ export default function SheetGrid({ workbook }: Props) {
     return offs
   }, [sheet, rowCount])
 
+  // Frozen panes (fixed rows/cols): freeze the first N rows / M columns so they stay visible
+  // while scrolling. Clamped to the sheet so a bogus value can't overflow. frozenRowsH/frozenColsW
+  // are the pixel extents of the frozen band / frozen columns (used by hitTest and the band).
+  const frozenRows = Math.min(sheet.freeze?.rows ?? 0, rowCount)
+  const frozenCols = Math.min(sheet.freeze?.cols ?? 0, colCount)
+  const frozenRowsH = rowOffsets[frozenRows] ?? 0
+  const frozenColsW = frozenCols >= colCount ? bodyWidth : colOffsets[frozenCols] ?? 0
+
   // Merges: which cells are covered, and geometry for each anchor overlay.
   const { coveredInFlow, coveredToAnchor, mergeBlocks } = useMemo(() => {
     const covered = new Set<number>()
@@ -144,8 +152,14 @@ export default function SheetGrid({ workbook }: Props) {
       const el = scrollRef.current
       if (!el) return { r: 0, c: 0 }
       const rect = el.getBoundingClientRect()
-      const bodyX = clientX - rect.left + el.scrollLeft - GUTTER_W
-      const bodyY = clientY - rect.top + el.scrollTop - HEAD_H
+      const relX = clientX - rect.left
+      const relY = clientY - rect.top
+      // Inside a frozen band/column the content is pinned, so resolve without the scroll offset;
+      // elsewhere add scrollTop/scrollLeft as usual. Keeps drag-extend correct over pinned cells.
+      const inFrozenRows = frozenRows > 0 && relY >= HEAD_H && relY < HEAD_H + frozenRowsH
+      const inFrozenCols = frozenCols > 0 && relX >= GUTTER_W && relX < GUTTER_W + frozenColsW
+      const bodyX = relX - GUTTER_W + (inFrozenCols ? 0 : el.scrollLeft)
+      const bodyY = relY - HEAD_H + (inFrozenRows ? 0 : el.scrollTop)
       let c = 0
       while (c < colCount - 1 && colOffsets[c + 1] <= bodyX) c++
       // Largest row index whose cumulative offset is <= bodyY (binary search over rowOffsets).
@@ -158,7 +172,7 @@ export default function SheetGrid({ workbook }: Props) {
       }
       return { r: clamp(lo, 0, rowCount - 1), c: clamp(c, 0, colCount - 1) }
     },
-    [colOffsets, rowOffsets, colCount, rowCount],
+    [colOffsets, rowOffsets, colCount, rowCount, frozenRows, frozenCols, frozenRowsH, frozenColsW],
   )
 
   // Keep the active cell in view (vertical via virtualizer, horizontal manually). Skip while
@@ -363,6 +377,38 @@ export default function SheetGrid({ workbook }: Props) {
   const virtualRows = rowVirtualizer.getVirtualItems()
   const totalWidth = bodyWidth + GUTTER_W
 
+  // One body row, absolutely positioned. Shared by the virtualized flow and the frozen-rows band
+  // so both render cells identically (merge suppression, selection classes, frozen-column pinning).
+  const renderRow = (r: number, top: number, height: number) => (
+    <div key={r} className={`row${r % 2 === 1 ? ' odd' : ''}`} style={{ position: 'absolute', top, height, width: totalWidth }}>
+      <div className={`row-head${rowInSel(r) ? ' hl' : ''}`} style={{ width: GUTTER_W }}>
+        {r + 1}
+      </div>
+      {columns.map((c) => {
+        const key = r * colCount + c
+        if (coveredInFlow.has(key)) return null // rendered as a merge overlay instead
+        const cell = cellMap.get(key)
+        const { style: cellStyle, isTableHeader, inTable } = styling.decorate(r, c, cell)
+        const isNum = typeof cell?.raw === 'number'
+        const align: HAlign = cellStyle?.hAlign ?? (isNum ? 'right' : 'left')
+        const selected = isSelected(r, c)
+        const active = key === activeAnchorKey
+        const frozenCol = c < frozenCols
+        return (
+          <div
+            key={c}
+            className={`cell${inTable ? ' in-table' : ''}${isTableHeader ? ' table-header' : ''}${selected && !active ? ' sel' : ''}${active ? ' active' : ''}${frozenCol ? ' frozen-col' : ''}`}
+            style={{ width: colWidths[c], ...(frozenCol ? { left: GUTTER_W + colOffsets[c] } : null), ...styleToCss(cellStyle, align) }}
+            onMouseDown={(e) => onCellMouseDown(e, r, c)}
+          >
+            {cell?.text}
+            {isTableHeader && <span className="filter-glyph">▾</span>}
+          </div>
+        )
+      })}
+    </div>
+  )
+
   return (
     <div className="sheet">
       <div className="formula-bar">
@@ -375,50 +421,23 @@ export default function SheetGrid({ workbook }: Props) {
         {/* Column headers (sticky top). */}
         <div className="head-row" style={{ width: totalWidth }}>
           <div className="corner" style={{ width: GUTTER_W }} />
-          {columns.map((c) => (
-            <div key={c} className={`col-head${colInSel(c) ? ' hl' : ''}`} style={{ width: colWidths[c] }}>
-              {columnLabel(c)}
-            </div>
-          ))}
+          {columns.map((c) => {
+            const frozenCol = c < frozenCols
+            return (
+              <div
+                key={c}
+                className={`col-head${colInSel(c) ? ' hl' : ''}${frozenCol ? ' frozen-col' : ''}`}
+                style={{ width: colWidths[c], ...(frozenCol ? { left: GUTTER_W + colOffsets[c] } : null) }}
+              >
+                {columnLabel(c)}
+              </div>
+            )
+          })}
         </div>
 
         {/* Body (absolute rows). */}
         <div className="body" style={{ height: rowVirtualizer.getTotalSize(), width: totalWidth }}>
-          {virtualRows.map((vr) => {
-            const r = vr.index
-            return (
-              <div
-                key={r}
-                className={`row${r % 2 === 1 ? ' odd' : ''}`}
-                style={{ position: 'absolute', top: vr.start, height: vr.size, width: totalWidth }}
-              >
-                <div className={`row-head${rowInSel(r) ? ' hl' : ''}`} style={{ width: GUTTER_W }}>
-                  {r + 1}
-                </div>
-                {columns.map((c) => {
-                  const key = r * colCount + c
-                  if (coveredInFlow.has(key)) return null // rendered as a merge overlay instead
-                  const cell = cellMap.get(key)
-                  const { style: cellStyle, isTableHeader, inTable } = styling.decorate(r, c, cell)
-                  const isNum = typeof cell?.raw === 'number'
-                  const align: HAlign = cellStyle?.hAlign ?? (isNum ? 'right' : 'left')
-                  const selected = isSelected(r, c)
-                  const active = key === activeAnchorKey
-                  return (
-                    <div
-                      key={c}
-                      className={`cell${inTable ? ' in-table' : ''}${isTableHeader ? ' table-header' : ''}${selected && !active ? ' sel' : ''}${active ? ' active' : ''}`}
-                      style={{ width: colWidths[c], ...styleToCss(cellStyle, align) }}
-                      onMouseDown={(e) => onCellMouseDown(e, r, c)}
-                    >
-                      {cell?.text}
-                      {isTableHeader && <span className="filter-glyph">▾</span>}
-                    </div>
-                  )
-                })}
-              </div>
-            )
-          })}
+          {virtualRows.map((vr) => renderRow(vr.index, vr.start, vr.size))}
 
           {/* Merge overlays (absolute, above the flow). */}
           {mergeBlocks.map((m, i) => {
@@ -451,6 +470,16 @@ export default function SheetGrid({ workbook }: Props) {
               overlays) so the perimeter is correct even when the range extends past the virtualized
               rows. pointer-events:none so it never eats clicks. */}
           <div className="sel-outline" style={{ left: selBox.left, top: selBox.top, width: selBox.width, height: selBox.height }} />
+
+          {/* Frozen top rows: an always-mounted band pinned below the header (the virtualizer
+              unmounts off-screen rows, so frozen rows can't live in the flow). Rows are drawn
+              band-local at their natural offsets; frozen columns inside pin via the same sticky
+              rule as the flow. Positioning/z live in CSS (.frozen-band); only size is inline. */}
+          {frozenRows > 0 && (
+            <div className="frozen-band" style={{ width: totalWidth, height: frozenRowsH }}>
+              {Array.from({ length: frozenRows }, (_, r) => renderRow(r, rowOffsets[r], rowOffsets[r + 1] - rowOffsets[r]))}
+            </div>
+          )}
 
           {/* Floating pictures (absolute, above the grid; positioned by pixel anchor). */}
           {sheet.pictures?.map((p, i) => (
