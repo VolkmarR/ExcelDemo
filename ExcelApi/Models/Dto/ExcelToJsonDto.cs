@@ -1,9 +1,29 @@
 ﻿namespace ExcelApi.Models.Dto;
 
+public record BorderDto(
+    string Color,
+    string LineStyle
+);
+
+public record CellStyleDto(
+    bool Bold,
+    bool Italic,
+    bool Underline,
+    double FontSize,
+    string FontName,
+    string HorizontalAlignment,
+    string VerticalAlignment,
+    BorderDto? TopBorder,
+    BorderDto? BottomBorder,
+    BorderDto? LeftBorder,
+    BorderDto? RightBorder
+);
+
 public record CellDto(
     string Text,
     string Bg,
-    string Fg
+    string Fg,
+    CellStyleDto Style
 );
 
 public record ChartDto(

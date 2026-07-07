@@ -1,6 +1,7 @@
 using System.Text.Json;
 using ExcelApi.Models;
 using ExcelApi.Models.Dto;
+using ExcelApi.Models.Helper;
 using ExcelApi.Services;
 using Syncfusion.Drawing;
 using Syncfusion.XlsIO;
@@ -145,10 +146,30 @@ app.MapPost("/api/excel/read", async (IFormFile file) =>
                     if (fg == "#000000")
                         fg = "inherit";
 
+                    #region Style
+
+                    var style = cell.CellStyle;
+                    var cellStyle = new CellStyleDto(
+                        Bold: style.Font.Bold,
+                        Italic: style.Font.Italic,
+                        Underline: style.Font.Underline != ExcelUnderline.None,
+                        FontSize: style.Font.Size,
+                        FontName: style.Font.FontName,
+                        HorizontalAlignment: style.HorizontalAlignment.ToString(),
+                        VerticalAlignment: style.VerticalAlignment.ToString(),
+                        TopBorder: ExcelHelper.GetBorder(style.Borders[ExcelBordersIndex.EdgeTop]),
+                        BottomBorder: ExcelHelper.GetBorder(style.Borders[ExcelBordersIndex.EdgeBottom]),
+                        LeftBorder: ExcelHelper.GetBorder(style.Borders[ExcelBordersIndex.EdgeLeft]),
+                        RightBorder: ExcelHelper.GetBorder(style.Borders[ExcelBordersIndex.EdgeRight])
+                    );
+
+                    #endregion
+
                     rowData.Add(new CellDto(
                         cell.DisplayText ?? string.Empty,
                         bg,
-                        fg));
+                        fg,
+                        cellStyle));
                 }
 
                 sheetRows.Add(rowData);
@@ -267,6 +288,5 @@ app.MapPost("/api/excel/read", async (IFormFile file) =>
     .Accepts<IFormFile>("multipart/form-data")
     .DisableAntiforgery()
     .WithName("ReadExcelWorkbook");
-
 
 app.Run();
