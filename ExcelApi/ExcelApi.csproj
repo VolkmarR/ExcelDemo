@@ -1,15 +1,18 @@
-<Project Sdk="Microsoft.NET.Sdk.Web">
+﻿<Project Sdk="Microsoft.NET.Sdk.Web">
 
     <PropertyGroup>
         <TargetFramework>net10.0</TargetFramework>
         <Nullable>enable</Nullable>
         <ImplicitUsings>enable</ImplicitUsings>
-    </PropertyGroup>
+      <UserSecretsId>65703a23-23c0-4d64-9622-cab6bdaea50f</UserSecretsId>
+  </PropertyGroup>
 
     <ItemGroup>
         <PackageReference Include="ClosedXML" Version="0.105.0" />
         <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.9" />
         <PackageReference Include="Swashbuckle.AspNetCore.SwaggerUI" Version="10.2.3" />
+        <PackageReference Include="Syncfusion.XlsIO.Net.Core" Version="34.1.29" />
+        <PackageReference Include="Syncfusion.XlsIORenderer.Net.Core" Version="34.1.29" />
     </ItemGroup>
 
 </Project>
