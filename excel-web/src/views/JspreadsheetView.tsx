@@ -5,7 +5,7 @@ import 'jsuites/dist/jsuites.css'
 import type { Cell, HAlign, Sheet, WorkbookModel } from '../model'
 import { cellAddress } from '../model'
 import { buildSheetStyling } from '../grid/sheetStyling'
-import { styleToCssText } from '../grid/cellCss'
+import { styleToCss, styleToCssText } from '../grid/cellCss'
 import '../grid/SheetGrid.css'
 import './JspreadsheetView.css'
 
@@ -38,6 +38,11 @@ export default function JspreadsheetView({ workbook }: Props) {
   const [sheetIndex, setSheetIndex] = useState(0)
   const sheet: Sheet = workbook.sheets[sheetIndex] ?? workbook.sheets[0]
   const { rowCount, colCount } = sheet
+
+  // Frozen panes: columns use CE's native `freezeColumns`; rows have no CE option, so they're
+  // drawn as a pinned band in the existing scroll-synced overlay layer (like the picture).
+  const frozenRows = Math.min(sheet.freeze?.rows ?? 0, rowCount)
+  const frozenCols = Math.min(sheet.freeze?.cols ?? 0, colCount)
 
   const [active, setActive] = useState({ r: 0, c: 0 })
   const [scroll, setScroll] = useState({ left: 0, top: 0 })
@@ -177,11 +182,12 @@ export default function JspreadsheetView({ workbook }: Props) {
               tableOverflow={true}
               tableHeight={gridH}
               lazyLoading={true}
+              freezeColumns={frozenCols}
             />
           </Spreadsheet>
         )}
 
-        {geom && (sheet.pictures?.length ?? 0) > 0 && (
+        {geom && (frozenRows > 0 || (sheet.pictures?.length ?? 0) > 0) && (
           <div className="overlay-layer" style={{ top: geom.headerH }}>
             {sheet.pictures?.map((p, i) => (
               <img
@@ -197,6 +203,33 @@ export default function JspreadsheetView({ workbook }: Props) {
                 }}
               />
             ))}
+            {/* Frozen top rows: CE has no freezeRows, so draw the first `frozenRows` rows as a band
+                pinned vertically (no scroll.top), scrolling horizontally except the frozen corner. */}
+            {frozenRows > 0 &&
+              Array.from({ length: frozenRows }).flatMap((_, r) =>
+                Array.from({ length: colCount }, (_, c) => {
+                  const cell = cellMap.get(r * colCount + c)
+                  const { style, isTableHeader } = styling.decorate(r, c, cell)
+                  const align: HAlign = style?.hAlign ?? (typeof cell?.raw === 'number' ? 'right' : 'left')
+                  const w = c + 1 < colCount ? geom.colX[c + 1] - geom.colX[c] : sheet.colWidths[c] ?? DEFAULT_COL_W
+                  return (
+                    <div
+                      key={`fz${r}-${c}`}
+                      className={isTableHeader ? 'jss-frozen-cell th' : 'jss-frozen-cell'}
+                      style={{
+                        left: geom.indexW + (geom.colX[c] ?? 0) - (c < frozenCols ? 0 : scroll.left),
+                        top: r * geom.rowH,
+                        width: w,
+                        height: geom.rowH,
+                        ...styleToCss(style, align),
+                      }}
+                    >
+                      {cell?.text}
+                      {isTableHeader && <span className="filter-glyph">▾</span>}
+                    </div>
+                  )
+                }),
+              )}
           </div>
         )}
       </div>

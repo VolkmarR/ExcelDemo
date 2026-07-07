@@ -170,6 +170,32 @@
   pointer-events: none;
 }
 
+/* Frozen panes (fixed rows/cols) --------------------------------------------------------
+   Frozen data columns: pinned left (just right of the row-number gutter). `left` is set inline
+   to GUTTER_W + the column's offset. z-index 2 keeps them above normal cells (0) and merges (1)
+   so scrolled cells slide under them; below the sticky headers. Placed after .cell.sel so a
+   selected frozen cell still resolves to position:sticky (not relative). */
+.cell.frozen-col {
+  position: sticky;
+  z-index: 2;
+}
+/* Frozen column letters in the header. z-index is local to .head-row's own stacking context:
+   above normal col-heads, below the .corner (z4). */
+.col-head.frozen-col {
+  position: sticky;
+  z-index: 1;
+}
+/* Frozen top rows: an always-mounted band that sticks just below the column header. `top` must
+   match HEAD_H (24px) in SheetGrid.tsx. z-index 3 makes it a stacking context so it paints over
+   the scrolled rows beneath it; it never overlaps the header (y 0..24), so sharing z3 with
+   .head-row is safe. Opaque background so scrolled content doesn't show through. */
+.frozen-band {
+  position: sticky;
+  top: 24px;
+  z-index: 3;
+  background: var(--cell-bg);
+}
+
 /* Table cells: cancel the sheet zebra so the table's own banding is exact
    (banded rows still win via their inline background). */
 .row.odd .cell.in-table {

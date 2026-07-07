@@ -32,3 +32,22 @@
   object-fit: fill;
   user-select: none;
 }
+/* Frozen top-row band: opaque cells pinned below CE's header, reusing decorate() styling.
+   CE has no freezeRows, so this is the read-only equivalent (same idiom as the picture overlay). */
+.jss-view .overlay-layer .jss-frozen-cell {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  box-sizing: border-box;
+  padding: 0 5px;
+  overflow: hidden;
+  white-space: nowrap;
+  font: 13px/1.2 var(--sans);
+  color: #1a1a1a;
+  background: var(--cell-bg);
+  border-right: 1px solid var(--grid-line);
+  border-bottom: 1px solid var(--grid-line);
+}
+.jss-view .overlay-layer .jss-frozen-cell.th {
+  padding-right: 18px; /* room for the table-header filter glyph */
+}
