@@ -55,7 +55,7 @@ app.MapGet("/api/workbook", () =>
     .WithSummary("Parsed workbook as JSON")
     .WithDescription(
         "Parses DemoData.xlsx on the server with ClosedXML and returns the shared WorkbookModel (sheets, cells, styles, merges, pictures).")
-    .Produces<WorkbookModel>(StatusCodes.Status200OK)
+    .Produces<WorkbookModel>()
     .Produces(StatusCodes.Status404NotFound);
 
 // Approaches B & C: serve the raw .xlsx bytes for client-side parsing (same-origin, never external).
@@ -79,7 +79,9 @@ app.MapGet("/api/workbook/file", () =>
     .Produces(StatusCodes.Status404NotFound);
 
 
-app.MapPost("/api/excel/read", async (IFormFile file) =>
+app.MapPost("/api/excel/read/{sheetName}", async (
+        string sheetName,
+        IFormFile file) =>
     {
         if (file.Length == 0)
             return Results.BadRequest("No file uploaded.");
@@ -90,190 +92,160 @@ app.MapPost("/api/excel/read", async (IFormFile file) =>
         application.DefaultVersion = ExcelVersion.Excel2016;
 
         application.XlsIORenderer = new XlsIORenderer();
-        application.XlsIORenderer.ChartRenderingOptions.ImageFormat =
-            ExportImageFormat.Png;
+        application.XlsIORenderer.ChartRenderingOptions.ImageFormat = ExportImageFormat.Png;
 
-        application.XlsIORenderer.ChartRenderingOptions.ScalingMode =
-            ScalingMode.Best;
+        application.XlsIORenderer.ChartRenderingOptions.ScalingMode = ScalingMode.Best;
 
         await using var stream = file.OpenReadStream();
 
-        var workbook =
-            application.Workbooks.Open(stream);
+        var workbook = application.Workbooks.Open(stream);
 
+        var worksheet = workbook.Worksheets
+            .FirstOrDefault(w =>
+                string.Equals(
+                    w.Name,
+                    sheetName,
+                    StringComparison.OrdinalIgnoreCase));
 
-        var responsePayload =
-            new Dictionary<string, WorksheetDto>(
-                workbook.Worksheets.Count);
-
-        foreach (var worksheet in workbook.Worksheets)
+        if (worksheet is null)
         {
-            worksheet.EnableSheetCalculations();
-            worksheet.UsedRangeIncludesFormatting = true;
-
-            var lastRow = worksheet.UsedRange.LastRow;
-            var lastColumn = worksheet.UsedRange.LastColumn;
-
-            #region Grid
-
-            var sheetRows =
-                new List<List<CellDto>>(lastRow);
-
-            for (var row = 1; row <= lastRow; row++)
-            {
-                var rowData =
-                    new List<CellDto>(lastColumn);
-
-                for (var col = 1; col <= lastColumn; col++)
-                {
-                    var cell = worksheet[row, col];
-
-                    var bg =
-                        ColorTranslator.ToHtml(
-                            cell.CellStyle.Color);
-
-                    var fg =
-                        ColorTranslator.ToHtml(
-                            cell.CellStyle.Font.RGBColor);
-
-                    if (bg == "#000000" &&
-                        cell.CellStyle.FillPattern ==
-                        ExcelPattern.None)
-                    {
-                        bg = "transparent";
-                    }
-
-                    if (fg == "#000000")
-                        fg = "inherit";
-
-                    #region Style
-
-                    var style = cell.CellStyle;
-                    var cellStyle = new CellStyleDto(
-                        Bold: style.Font.Bold,
-                        Italic: style.Font.Italic,
-                        Underline: style.Font.Underline != ExcelUnderline.None,
-                        FontSize: style.Font.Size,
-                        FontName: style.Font.FontName,
-                        HorizontalAlignment: style.HorizontalAlignment.ToString(),
-                        VerticalAlignment: style.VerticalAlignment.ToString(),
-                        TopBorder: ExcelHelper.GetBorder(style.Borders[ExcelBordersIndex.EdgeTop]),
-                        BottomBorder: ExcelHelper.GetBorder(style.Borders[ExcelBordersIndex.EdgeBottom]),
-                        LeftBorder: ExcelHelper.GetBorder(style.Borders[ExcelBordersIndex.EdgeLeft]),
-                        RightBorder: ExcelHelper.GetBorder(style.Borders[ExcelBordersIndex.EdgeRight])
-                    );
-
-                    #endregion
-
-                    rowData.Add(new CellDto(
-                        cell.DisplayText ?? string.Empty,
-                        bg,
-                        fg,
-                        cellStyle));
-                }
-
-                sheetRows.Add(rowData);
-            }
-
-            #endregion
-
-            #region Charts (Sequential - safest)
-
-            var sheetCharts =
-                new List<ChartDto>(
-                    worksheet.Charts.Count);
-
-            foreach (IChart chart in worksheet.Charts)
-            {
-                using var chartStream = new MemoryStream();
-
-                chart.SaveAsImage(chartStream);
-
-                sheetCharts.Add(new ChartDto(
-                    Src:
-                    $"data:image/png;base64,{Convert.ToBase64String(chartStream.ToArray())}",
-                    X: chart.XPos,
-                    Y: chart.YPos,
-                    Width: chart.Width,
-                    Height: chart.Height));
-            }
-
-            #endregion
-
-            #region Images (Safe parallel CPU conversion)
-
-            var pictures =
-                worksheet.Pictures
-                    .Cast<IPictureShape>()
-                    .ToList();
-
-            var imageTasks = pictures.Select(picture =>
-                Task.Run(() =>
-                {
-                    var imageBytes =
-                        picture.Picture.ImageData;
-
-                    return new ImageDto(
-                        Height: picture.HeightDouble,
-                        Width: picture.WidthDouble,
-                        Left: picture.LeftDouble,
-                        Top: picture.TopDouble,
-                        Image: Convert.ToBase64String(imageBytes)
-                    );
-                }));
-
-            var sheetImages =
-                (await Task.WhenAll(imageTasks))
-                .ToList();
-
-            #endregion
-
-            #region Merged Cells
-
-            var mergedCells =
-                new List<MergeCellDto>();
-
-            if (worksheet.MergedCells is not null)
-            {
-                foreach (var area in worksheet.MergedCells)
-                {
-                    if (area is null)
-                        continue;
-
-                    mergedCells.Add(
-                        new MergeCellDto(
-                            StartRow: area.Row,
-                            StartColumn: area.Column,
-                            EndRow: area.LastRow,
-                            EndColumn: area.LastColumn));
-                }
-            }
-
-            #endregion
-
-
-            #region Conditional Formatting
-            
-            //Evaluate if it is needed.
-            //XLSIO can only get rules, So we need to evaluate the rules.
-            // https://help.syncfusion.com/document-processing/excel/excel-library/net/working-with-conditional-formatting#reading-an-existing-conditional-format
-
-            #endregion
-
-            responsePayload[worksheet.Name] =
-                new WorksheetDto(
-                    Grid: sheetRows,
-                    Charts: sheetCharts,
-                    Images: sheetImages,
-                    FrozenRows: worksheet.HorizontalSplit,
-                    FrozenColumns: worksheet.VerticalSplit,
-                    MergedCells: mergedCells);
+            return Results.NotFound(
+                $"Worksheet '{sheetName}' not found.");
         }
 
-        workbook.Close();
+        worksheet.EnableSheetCalculations();
+        worksheet.UsedRangeIncludesFormatting = true;
+
+        var lastRow = worksheet.UsedRange.LastRow;
+        var lastColumn = worksheet.UsedRange.LastColumn;
+
+        // ======================
+        // Grid
+        // ======================
+
+        var sheetRows = new List<List<CellDto>>(lastRow);
+
+        for (var row = 1; row <= lastRow; row++)
+        {
+            var rowData = new List<CellDto>(lastColumn);
+
+            for (var col = 1; col <= lastColumn; col++)
+            {
+                var cell = worksheet[row, col];
+
+                var bg = ColorTranslator.ToHtml(
+                    cell.CellStyle.Color);
+
+                var fg = ColorTranslator.ToHtml(
+                    cell.CellStyle.Font.RGBColor);
+
+                if (bg == "#000000" &&
+                    cell.CellStyle.FillPattern == ExcelPattern.None)
+                {
+                    bg = "transparent";
+                }
+
+                if (fg == "#000000")
+                    fg = "inherit";
+
+                var style = cell.CellStyle;
+
+                var cellStyle = new CellStyleDto(
+                    Bold: style.Font.Bold,
+                    Italic: style.Font.Italic,
+                    Underline: style.Font.Underline != ExcelUnderline.None,
+                    FontSize: style.Font.Size,
+                    FontName: style.Font.FontName,
+                    HorizontalAlignment: style.HorizontalAlignment.ToString(),
+                    VerticalAlignment: style.VerticalAlignment.ToString(),
+                    TopBorder: ExcelHelper.GetBorder(style.Borders[ExcelBordersIndex.EdgeTop]),
+                    BottomBorder: ExcelHelper.GetBorder(style.Borders[ExcelBordersIndex.EdgeBottom]),
+                    LeftBorder: ExcelHelper.GetBorder(style.Borders[ExcelBordersIndex.EdgeLeft]),
+                    RightBorder: ExcelHelper.GetBorder(style.Borders[ExcelBordersIndex.EdgeRight])
+                );
+
+                rowData.Add(new CellDto(
+                    cell.DisplayText ?? string.Empty,
+                    bg,
+                    fg,
+                    cellStyle));
+            }
+
+            sheetRows.Add(rowData);
+        }
+
+        // ======================
+        // Charts
+        // ======================
+
+        var sheetCharts = new List<ChartDto>();
+
+        foreach (IChart chart in worksheet.Charts)
+        {
+            using var chartStream = new MemoryStream();
+
+            chart.SaveAsImage(chartStream);
+
+            sheetCharts.Add(new ChartDto(
+                Src: $"data:image/png;base64,{Convert.ToBase64String(chartStream.ToArray())}",
+                X: chart.XPos,
+                Y: chart.YPos,
+                Width: chart.Width,
+                Height: chart.Height));
+        }
+
+        // ======================
+        // Images
+        // ======================
+
+        var sheetImages = new List<ImageDto>();
+
+        foreach (IPictureShape picture in worksheet.Pictures)
+        {
+            sheetImages.Add(
+                new ImageDto(
+                    Height: picture.HeightDouble,
+                    Width: picture.WidthDouble,
+                    Left: picture.LeftDouble,
+                    Top: picture.TopDouble,
+                    Image: Convert.ToBase64String(
+                        picture.Picture.ImageData)
+                ));
+        }
+
+        // ======================
+        // Merged Cells
+        // ======================
+
+        var mergedCells = new List<MergeCellDto>();
+
+        if (worksheet.MergedCells is not null)
+        {
+            foreach (var area in worksheet.MergedCells)
+            {
+                if (area is null)
+                    continue;
+
+                mergedCells.Add(
+                    new MergeCellDto(
+                        StartRow: area.Row,
+                        StartColumn: area.Column,
+                        EndRow: area.LastRow,
+                        EndColumn: area.LastColumn));
+            }
+        }
+
+        var response = new WorksheetDto(
+            Grid: sheetRows,
+            Charts: sheetCharts,
+            Images: sheetImages,
+            FrozenRows: worksheet.HorizontalSplit,
+            FrozenColumns: worksheet.VerticalSplit,
+            MergedCells: mergedCells
+        );
 
         // 1. Serialize the payload object into an in-memory JSON byte array
-        var jsonBytes = JsonSerializer.SerializeToUtf8Bytes(responsePayload, new JsonSerializerOptions
+        var jsonBytes = JsonSerializer.SerializeToUtf8Bytes(response, new JsonSerializerOptions
         {
             WriteIndented = true // Makes the downloaded file human-readable and clean
         });
@@ -287,6 +259,30 @@ app.MapPost("/api/excel/read", async (IFormFile file) =>
     })
     .Accepts<IFormFile>("multipart/form-data")
     .DisableAntiforgery()
-    .WithName("ReadExcelWorkbook");
+    .WithName("ReadWorksheet");
+
+app.MapPost("/api/excel/sheets", async (IFormFile file) =>
+    {
+        if (file.Length == 0)
+            return Results.BadRequest("No file uploaded.");
+
+        using var excelEngine = new ExcelEngine();
+
+        var application = excelEngine.Excel;
+        application.DefaultVersion = ExcelVersion.Excel2016;
+
+        await using var stream = file.OpenReadStream();
+
+        var workbook = application.Workbooks.Open(stream);
+
+        var sheetNames = workbook.Worksheets
+            .Select(w => w.Name)
+            .ToList();
+
+        return Results.Json(sheetNames);
+    })
+    .Accepts<IFormFile>("multipart/form-data")
+    .DisableAntiforgery()
+    .WithName("GetWorkbookSheets");
 
 app.Run();
