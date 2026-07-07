@@ -1,7 +1,7 @@
 using System.Text.Json;
 using ExcelApi.Models;
-using ExcelApi.Models.Dto;
-using ExcelApi.Models.Helper;
+using ExcelApi.Models.SyncfusionPoc.Dto;
+using ExcelApi.Models.SyncfusionPoc.Helper;
 using ExcelApi.Services;
 using Syncfusion.Drawing;
 using Syncfusion.XlsIO;

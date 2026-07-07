@@ -1,4 +1,4 @@
-﻿namespace ExcelApi.Models.Dto;
+﻿namespace ExcelApi.Models.SyncfusionPoc.Dto;
 
 public record BorderDto(
     string Color,

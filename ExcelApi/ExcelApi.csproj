@@ -15,4 +15,8 @@
         <PackageReference Include="Syncfusion.XlsIORenderer.Net.Core" Version="34.1.29" />
     </ItemGroup>
 
+    <ItemGroup>
+      <Folder Include="Models\SyncfusionPoc\" />
+    </ItemGroup>
+
 </Project>

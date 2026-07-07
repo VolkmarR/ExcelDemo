@@ -1,10 +1,10 @@
-﻿using ExcelApi.Models.Dto;
+﻿using ExcelApi.Models.SyncfusionPoc.Dto;
 using Syncfusion.Drawing;
 using Syncfusion.XlsIO;
 
-namespace ExcelApi.Models.Helper;
+namespace ExcelApi.Models.SyncfusionPoc.Helper;
 
-public class ExcelHelper
+public static class ExcelHelper
 {
     public static BorderDto? GetBorder(IBorder? border)
     {
