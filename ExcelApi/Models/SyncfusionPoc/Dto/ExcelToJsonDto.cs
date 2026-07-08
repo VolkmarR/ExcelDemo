@@ -5,7 +5,9 @@ public record BorderDto(
     string LineStyle
 );
 
-public record CellStyleDto(
+public sealed record CellStyleDto(
+    string Bg,
+    string Fg,
     bool Bold,
     bool Italic,
     bool Underline,
@@ -19,12 +21,9 @@ public record CellStyleDto(
     BorderDto? RightBorder
 );
 
-public record CellDto(
-    string Text,
-    string Bg,
-    string Fg,
-    CellStyleDto Style
-);
+public sealed record CellDto(
+    string? V,
+    int S);
 
 public record ChartDto(
     string Src,
@@ -49,8 +48,9 @@ public record MergeCellDto(
     int EndColumn
 );
 
-public record WorksheetDto(
+public sealed record WorksheetDto(
     List<List<CellDto>> Grid,
+    Dictionary<int, CellStyleDto> Styles,
     List<ChartDto> Charts,
     List<ImageDto> Images,
     int FrozenRows,

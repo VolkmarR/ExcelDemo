@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using ExcelApi.Models;
 using ExcelApi.Models.SyncfusionPoc.Dto;
 using ExcelApi.Models.SyncfusionPoc.Helper;
@@ -156,6 +157,11 @@ app.MapPost("/api/excel/read/{sheetName}", async (
         // Grid
         // ======================
 
+        var styleMap = new Dictionary<CellStyleDto, int>();
+        var styles = new Dictionary<int, CellStyleDto>();
+
+        var nextStyleId = 1;
+
         var sheetRows = new List<List<CellDto>>(lastRow);
 
         for (var row = 1; row <= lastRow; row++)
@@ -183,7 +189,9 @@ app.MapPost("/api/excel/read/{sheetName}", async (
 
                 var style = cell.CellStyle;
 
-                var cellStyle = new CellStyleDto(
+                var styleDto = new CellStyleDto(
+                    Bg: bg,
+                    Fg: fg,
                     Bold: style.Font.Bold,
                     Italic: style.Font.Italic,
                     Underline: style.Font.Underline != ExcelUnderline.None,
@@ -197,11 +205,19 @@ app.MapPost("/api/excel/read/{sheetName}", async (
                     RightBorder: ExcelHelper.GetBorder(style.Borders[ExcelBordersIndex.EdgeRight])
                 );
 
-                rowData.Add(new CellDto(
-                    cell.DisplayText ?? string.Empty,
-                    bg,
-                    fg,
-                    cellStyle));
+                if (!styleMap.TryGetValue(styleDto, out var styleId))
+                {
+                    styleId = nextStyleId++;
+
+                    styleMap.Add(styleDto, styleId);
+                    styles.Add(styleId, styleDto);
+                }
+
+                rowData.Add(
+                    new CellDto(
+                        V: cell.DisplayText,
+                        S: styleId
+                    ));
             }
 
             sheetRows.Add(rowData);
@@ -270,6 +286,7 @@ app.MapPost("/api/excel/read/{sheetName}", async (
 
         var response = new WorksheetDto(
             Grid: sheetRows,
+            Styles: styles,
             Charts: sheetCharts,
             Images: sheetImages,
             FrozenRows: worksheet.HorizontalSplit,
@@ -277,11 +294,16 @@ app.MapPost("/api/excel/read/{sheetName}", async (
             MergedCells: mergedCells
         );
 
-        // 1. Serialize the payload object into an in-memory JSON byte array
-        var jsonBytes = JsonSerializer.SerializeToUtf8Bytes(response, new JsonSerializerOptions
+        var jsonOptions = new JsonSerializerOptions
         {
-            WriteIndented = true // Makes the downloaded file human-readable and clean
-        });
+            WriteIndented = false,
+            DefaultIgnoreCondition =
+                JsonIgnoreCondition.WhenWritingDefault
+        };
+
+        var jsonBytes = JsonSerializer.SerializeToUtf8Bytes(
+            response,
+            jsonOptions);
 
         // 2. Return it as a file streaming response
         return Results.File(
@@ -363,18 +385,18 @@ app.MapPost("/api/spreadsheet/open", async (HttpRequest request) =>
     {
         if (sheet is null)
             continue;
-        
+
         sheet.EnableSheetCalculations();
-    
+
         foreach (var cell in sheet.UsedRange.Cells)
         {
             if (cell is not null && !string.IsNullOrEmpty(cell.Formula))
             {
                 var value = cell.CalculatedValue;
-    
+
                 // Remove formula
                 cell.Clear(ExcelClearOptions.ClearContent);
-    
+
                 // Write calculated value as text/value
                 cell.Value = value;
             }
