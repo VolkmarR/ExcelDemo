@@ -75,19 +75,27 @@ string ResolveExcelPath() =>
 
 // Approach A: parse on the backend with the configured IWorkbookReader and return the shared
 // WorkbookModel as JSON (ClosedXML or the Open XML SDK — see the DI registration above).
-app.MapGet("/api/workbook", (IWorkbookReader reader) =>
-    {
-        var path = ResolveExcelPath();
-        if (!File.Exists(path))
-            return Results.NotFound(new { error = $"Excel file not found at {path}" });
-        return Results.Ok(reader.Read(path));
-    })
+app.MapPost("/api/workbook",
+        async (IWorkbookReader reader, IFormFile file) =>
+        {
+            if (file is null || file.Length == 0)
+                return Results.BadRequest(new
+                {
+                    error = "No file uploaded"
+                });
+
+            
+            await using var stream = file.OpenReadStream();
+
+            return Results.Ok(reader.Read(stream));
+        })
+    .DisableAntiforgery()
     .WithName("GetWorkbook")
     .WithTags("Workbook")
     .WithSummary("Parsed workbook as JSON")
     .WithDescription(
-        "Parses DemoData.xlsx on the server with the configured IWorkbookReader and returns the shared WorkbookModel (sheets, cells, styles, merges, pictures).")
-    .Produces<WorkbookModel>(StatusCodes.Status200OK)
+        "Parses Excel on the server with the configured IWorkbookReader and returns the shared WorkbookModel (sheets, cells, styles, merges, pictures).")
+    .Produces<WorkbookModel>()
     .Produces(StatusCodes.Status404NotFound);
 
 // Approaches B & C: serve the raw .xlsx bytes for client-side parsing (same-origin, never external).
@@ -109,6 +117,7 @@ app.MapGet("/api/workbook/file", () =>
         "Returns the raw DemoData.xlsx bytes (same-origin) for client-side parsing by the ExcelJS and Univer tabs.")
     .Produces(StatusCodes.Status200OK, contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
     .Produces(StatusCodes.Status404NotFound);
+
 
 
 #region Syncfusion POC

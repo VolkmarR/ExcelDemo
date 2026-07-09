@@ -10,10 +10,29 @@ export interface LoadResult {
  * Approach A — the ASP.NET backend parsed the file with ClosedXML and returns
  * the shared WorkbookModel as JSON. The browser only deserializes it.
  */
-export async function loadFromBackend(): Promise<LoadResult> {
+export async function loadFromBackend(
+    selectedFile: File
+): Promise<LoadResult> {
   const t0 = performance.now()
-  const res = await fetch('/api/workbook')
-  if (!res.ok) throw new Error(`Backend /api/workbook responded with ${res.status}`)
+
+  const formData = new FormData()
+  formData.append('file', selectedFile)
+
+  const res = await fetch('/api/workbook', {
+    method: 'POST',
+    body: formData,
+  })
+
+  if (!res.ok) {
+    throw new Error(
+        `Backend /api/workbook responded with ${res.status}`
+    )
+  }
+
   const model = (await res.json()) as WorkbookModel
-  return { model, ms: performance.now() - t0 }
+
+  return {
+    model,
+    ms: performance.now() - t0,
+  }
 }

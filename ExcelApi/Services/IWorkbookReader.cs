@@ -11,4 +11,5 @@ namespace ExcelApi.Services;
 public interface IWorkbookReader
 {
     WorkbookModel Read(string path);
+    WorkbookModel Read(Stream stream);
 }

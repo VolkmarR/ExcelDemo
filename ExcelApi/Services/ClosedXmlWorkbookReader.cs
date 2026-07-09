@@ -13,13 +13,22 @@ public sealed class ClosedXmlWorkbookReader : IWorkbookReader
 {
     public WorkbookModel Read(string path)
     {
-        // FileShare.ReadWrite so a copy open in Excel does not block the preview.
         using var fs = File.Open(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
-        using var wb = new XLWorkbook(fs);
+        return Read(fs);
+    }
+
+    public WorkbookModel Read(Stream stream)
+    {
+        if (stream.CanSeek)
+            stream.Position = 0;
+
+        using var wb = new XLWorkbook(stream);
 
         var sheets = new List<SheetModel>();
+
         foreach (var ws in wb.Worksheets)
             sheets.Add(ReadSheet(ws));
+
         return new WorkbookModel(sheets, ThemeOf(wb));
     }
 
@@ -96,6 +105,7 @@ public sealed class ClosedXmlWorkbookReader : IWorkbookReader
             colCount = Math.Max(colCount, m.C1 + 1);
             rowCount = Math.Max(rowCount, m.R1 + 1);
         }
+
         colCount = Math.Max(colCount, picMaxCol);
         rowCount = Math.Max(rowCount, picMaxRow);
 
@@ -117,7 +127,8 @@ public sealed class ClosedXmlWorkbookReader : IWorkbookReader
         var tables = ReadTables(ws);
         var conditionalFormats = ReadConditionalFormats(ws);
 
-        return new SheetModel(ws.Name, rowCount, colCount, cells, colWidths, rowHeights, merges, freeze, pictures, tables, conditionalFormats);
+        return new SheetModel(ws.Name, rowCount, colCount, cells, colWidths, rowHeights, merges, freeze, pictures,
+            tables, conditionalFormats);
     }
 
     // Excel Tables (ListObjects): name, range, built-in style name and the display flags.
@@ -147,6 +158,7 @@ public sealed class ClosedXmlWorkbookReader : IWorkbookReader
                 // A single unreadable table must never break the preview.
             }
         }
+
         return tables;
     }
 
@@ -192,6 +204,7 @@ public sealed class ClosedXmlWorkbookReader : IWorkbookReader
                 // A single unreadable rule must never break the preview.
             }
         }
+
         return result;
     }
 
@@ -250,7 +263,8 @@ public sealed class ClosedXmlWorkbookReader : IWorkbookReader
             && wrap is null && border is null)
             return null;
 
-        return new CellStyleModel(bold, italic, underline, color, bg, fontFamily, fontSize, hAlign, vAlign, wrap, border);
+        return new CellStyleModel(bold, italic, underline, color, bg, fontFamily, fontSize, hAlign, vAlign, wrap,
+            border);
     }
 
     private static BordersModel? BordersOf(IXLBorder b)
@@ -303,14 +317,17 @@ public sealed class ClosedXmlWorkbookReader : IWorkbookReader
 
                 // Grow the used range to fit the picture. BottomRightCell throws for
                 // non-resizing anchors, so walk widths/heights from the pixel extent instead.
-                maxCol = Math.Max(maxCol, FarIndex(fromCol, pic.Left + pic.Width, i => Math.Round(ws.Column(i + 1).Width * 7 + 5)));
-                maxRow = Math.Max(maxRow, FarIndex(fromRow, pic.Top + pic.Height, i => Math.Round(ws.Row(i + 1).Height * 4.0 / 3.0)));
+                maxCol = Math.Max(maxCol,
+                    FarIndex(fromCol, pic.Left + pic.Width, i => Math.Round(ws.Column(i + 1).Width * 7 + 5)));
+                maxRow = Math.Max(maxRow,
+                    FarIndex(fromRow, pic.Top + pic.Height, i => Math.Round(ws.Row(i + 1).Height * 4.0 / 3.0)));
             }
             catch
             {
                 // A single unreadable picture must never break the preview.
             }
         }
+
         return pictures;
     }
 
@@ -324,6 +341,7 @@ public sealed class ClosedXmlWorkbookReader : IWorkbookReader
             acc += sizePx(i);
             i++;
         }
+
         return i + 1;
     }
 

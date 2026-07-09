@@ -19,15 +19,25 @@ import type { LoadResult } from './backendModel'
  * in the browser and we map into the same shared WorkbookModel that the
  * SheetGrid renders. Nothing leaves the browser.
  */
-export async function loadFromExcelJs(): Promise<LoadResult> {
+export async function loadFromExcelJs(
+    selectedFile: File
+): Promise<LoadResult> {
   const t0 = performance.now()
-  const res = await fetch('/api/workbook/file')
-  if (!res.ok) throw new Error(`/api/workbook/file responded with ${res.status}`)
-  const buf = await res.arrayBuffer()
+
+  const buf = await selectedFile.arrayBuffer()
+
   const wb = new ExcelJS.Workbook()
   await wb.xlsx.load(buf)
+
   const sheets = wb.worksheets.map((ws) => mapWorksheet(ws, wb))
-  return { model: { sheets, theme: parseTheme(wb) }, ms: performance.now() - t0 }
+
+  return {
+    model: {
+      sheets,
+      theme: parseTheme(wb),
+    },
+    ms: performance.now() - t0,
+  }
 }
 
 function mapWorksheet(ws: ExcelJS.Worksheet, wb: ExcelJS.Workbook): Sheet {
