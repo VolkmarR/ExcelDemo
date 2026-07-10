@@ -60,6 +60,11 @@ public sealed class OpenXmlWorkbookReader : IWorkbookReader
         return new WorkbookModel(sheets, ctx.Theme);
     }
 
+    public WorkbookModel Read(Stream stream)
+    {
+        throw new NotImplementedException();
+    }
+
     private SheetModel ReadSheet(string name, WorksheetPart wsPart, WorkbookContext ctx)
     {
         var ws = wsPart.Worksheet;
